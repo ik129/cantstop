@@ -14,24 +14,44 @@ if (typeof firebase !== 'undefined' && typeof firebaseConfig !== 'undefined') {
 }
 
 // --- DOM要素の取得 ---
-const playerNameInput = document.getElementById('player-name');
-const createRoomButton = document.getElementById('create-room');
-const roomIdInput = document.getElementById('room-id');
-const joinRoomButton = document.getElementById('join-room');
-const startGameButton = document.getElementById('start-game');
+// Note: HTMLのID変更に合わせて更新が必要 (例: createRoomButton -> create-room-btn)
+// このサブタスクではdrawGameBoardに集中するため、他は一旦そのまま
+const playerNameInput = document.getElementById('player-name'); // HTMLに合わせて host-name or client-name を使うべき
+const createRoomButton = document.getElementById('create-room-btn'); // ID変更: create-room -> create-room-btn
+const roomIdDisplay = document.getElementById('room-id-display'); // 追加
+const roomIdInput = document.getElementById('room-id-input'); // ID変更: room-id -> room-id-input
+const joinRoomButton = document.getElementById('join-room-btn'); // ID変更: join-room -> join-room-btn
+const startGameButton = document.getElementById('start-game-btn'); // ID変更: start-game -> start-game-btn
+
 const roomManagementDiv = document.getElementById('room-management');
-const gameAreaDiv = document.getElementById('game-area');
-const currentPlayerSpan = document.querySelector('#current-player span');
-const playersListDiv = document.getElementById('players-list');
+const gameInfoDiv = document.getElementById('game-info'); //追加 (game-areaから分離)
+const currentPlayerDisplay = document.getElementById('current-player-display'); // ID変更
+const messageDisplay = document.getElementById('message-display'); // 追加
+const playerListAreaDiv = document.getElementById('player-list-area'); // 追加
+const playerListUl = document.getElementById('player-list'); // ID変更 playersListDiv -> playerListUl
+
 const gameBoardDiv = document.getElementById('game-board');
-const diceResultsDiv = document.getElementById('dice-results');
-const rollDiceButton = document.getElementById('roll-dice');
-const diceCombinationAreaDiv = document.getElementById('dice-combination-area');
-const diceCombinationsDiv = document.getElementById('dice-combinations');
-const stopTurnButton = document.getElementById('stop-turn');
-const continueTurnButton = document.getElementById('continue-turn');
+const diceAreaDiv = document.getElementById('dice-area'); //追加
+const diceResultDisplay = document.getElementById('dice-result-display'); // ID変更 diceResultsDiv -> diceResultDisplay
+const rollDiceButton = document.getElementById('roll-dice-btn'); // ID変更 roll-dice -> roll-dice-btn
+
+const actionAreaDiv = document.getElementById('action-area'); // 追加
+const diceCombinationChoiceArea = document.getElementById('dice-combination-choice-area'); // 追加
+const stopButton = document.getElementById('stop-btn'); // ID変更 stop-turn -> stop-btn
+
+// 古いIDの変数はコメントアウトまたは削除 (必要に応じて新しいIDで再宣言)
+// const gameAreaDiv = document.getElementById('game-area'); // game-info, game-boardなどに分割された
+// const currentPlayerSpan = document.querySelector('#current-player span'); // currentPlayerDisplay を使用
+// const playersListDiv = document.getElementById('players-list'); // playerListUl を使用
+// const diceResultsDiv = document.getElementById('dice-results'); // diceResultDisplay を使用
+// const diceCombinationAreaDiv = document.getElementById('dice-combination-area'); // diceCombinationChoiceArea を使用
+// const diceCombinationsDiv = document.getElementById('dice-combinations'); // diceCombinationChoiceArea の子要素として管理
+// const stopTurnButton = document.getElementById('stop-turn'); // stopButton を使用
+// const continueTurnButton = document.getElementById('continue-turn'); // 未使用 or rollDiceButtonで兼用
 
 // --- ゲーム設定 ---
+const MAX_PLAYERS = 4; // 最大プレイヤー数
+const MIN_PLAYERS_TO_START = 2; // ゲーム開始に必要な最低プレイヤー数
 const TRACK_CONFIG = {
     2: 3, 3: 5, 4: 7, 5: 9, 6: 11, 7: 13,
     8: 11, 9: 9, 10: 7, 11: 5, 12: 3
@@ -57,82 +77,123 @@ let myTurnJustEndedAndBusted = false;
  * ゲームボードを描画する関数
  */
 function drawGameBoard() {
-    gameBoardDiv.innerHTML = '';
-    for (let i = 2; i <= 12; i++) {
-        const trackDiv = document.createElement('div');
-        trackDiv.classList.add('track');
-        trackDiv.dataset.trackNumber = i;
-
-        const trackLabel = document.createElement('div');
-        trackLabel.classList.add('track-label');
-        trackLabel.textContent = i;
-        trackDiv.appendChild(trackLabel);
-
-        const cantStopSpace = document.createElement('div');
-        cantStopSpace.classList.add('cant-stop-space');
-        cantStopSpace.textContent = 'CS';
-        trackDiv.appendChild(cantStopSpace);
-
-        const numCells = TRACK_CONFIG[i];
-        for (let j = 1; j <= numCells; j++) {
-            const cellDiv = document.createElement('div');
-            cellDiv.classList.add('cell');
-            cellDiv.dataset.track = i;
-            cellDiv.dataset.cell = j;
-            if (j === numCells) {
-                cellDiv.classList.add('goal-line');
-            }
-            const markerContainer = document.createElement('div');
-            markerContainer.classList.add('marker-container');
-            cellDiv.appendChild(markerContainer);
-            trackDiv.appendChild(cellDiv);
-        }
-        gameBoardDiv.appendChild(trackDiv);
+    if (!gameBoardDiv) {
+        console.error("Game board element not found!");
+        return;
     }
-    console.log("Game board drawn.");
+    gameBoardDiv.innerHTML = ''; // 描画前にクリア
+
+    // TRACK_CONFIGは既存の {2: 3, 3: 5, ...} 形式をそのまま使用
+    // CSSでは .track クラスを使用しているので、それに合わせる
+    for (const trackNumber in TRACK_CONFIG) {
+        if (TRACK_CONFIG.hasOwnProperty(trackNumber)) {
+            const numCells = TRACK_CONFIG[trackNumber];
+            const trackDiv = document.createElement('div');
+            trackDiv.classList.add('track');
+            trackDiv.dataset.trackNumber = trackNumber;
+
+            const trackLabel = document.createElement('div');
+            trackLabel.classList.add('track-label');
+            trackLabel.textContent = trackNumber;
+            trackDiv.appendChild(trackLabel);
+
+            // マスを生成 (1からnumCellsまで)
+            // CSSのflex-direction: column-reverse; を利用するため、
+            // HTML上は1番目のマス(Can't Stopスペース)が最初に来るようにする
+            for (let i = 1; i <= numCells; i++) {
+                const cellDiv = document.createElement('div');
+                cellDiv.classList.add('cell');
+                cellDiv.dataset.track = trackNumber;
+                cellDiv.dataset.cellPosition = i; // マス目の位置 (1から)
+
+                if (i === 1) { // 最初のマス
+                    cellDiv.classList.add('cant-stop-space');
+                    // cellDiv.textContent = 'CS'; // CSSで装飾するので不要かも
+                }
+                if (i === numCells) { // 最後のマス
+                    cellDiv.classList.add('goal-line');
+                }
+
+                const markerContainer = document.createElement('div');
+                markerContainer.classList.add('marker-container');
+                cellDiv.appendChild(markerContainer);
+                trackDiv.appendChild(cellDiv);
+            }
+            gameBoardDiv.appendChild(trackDiv);
+        }
+    }
+    console.log("Game board drawn with new structure.");
 }
 
 /**
  * 部屋を作成する処理
  */
 async function createRoom() {
-    currentPlayerName = playerNameInput.value.trim();
+    // DOM要素のIDが変更されたため、対応する変数を参照するように注意
+    // 例: playerNameInput -> hostNameInput (仮の変数名)
+    const hostNameInput = document.getElementById('host-name');
+    if (!hostNameInput) { console.error("#host-name not found"); return; }
+    currentPlayerName = hostNameInput.value.trim();
+
     if (!currentPlayerName) {
-        alert("プレイヤー名を入力してください。");
+        alert("あなたの名前（ホスト名）を入力してください。");
+        if (messageDisplay) messageDisplay.textContent = "ホスト名を入力してください。";
         return;
     }
     if (typeof db === 'undefined') {
-        alert("データベースに接続できません。設定を確認してください。");
+        alert("データベースに接続できません。Firebaseの設定を確認してください。");
+        if (messageDisplay) messageDisplay.textContent = "データベース接続エラー。";
         return;
     }
-    localPlayerId = db.collection('rooms').doc().id.substring(0, 8);
-    const newRoomId = db.collection('rooms').doc().id.substring(0, 6);
-    currentRoomId = newRoomId;
+
+    localPlayerId = generatePlayerId();
+    currentRoomId = generateRoomId();
 
     const playerObject = {
-        id: localPlayerId, name: currentPlayerName, color: PLAYER_COLORS[0],
-        joinOrder: 1, isHost: true, occupiedTracksCount: 0
+        id: localPlayerId,
+        name: currentPlayerName,
+        color: PLAYER_COLORS[0], // Host is always the first color
+        joinOrder: 1,
+        isHost: true,
+        occupiedTracksCount: 0,
     };
+
     const roomData = {
+        roomId: currentRoomId, // Store roomId also in the document
+        hostName: currentPlayerName,
+        hostId: localPlayerId,
+        players: { [localPlayerId]: playerObject }, // Players stored as a map
+        status: "waiting", // "waiting", "playing", "finished"
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        hostPlayerId: localPlayerId, status: "waiting", activePlayerId: null,
-        turnDiceRoll: [], turnChosenSums: [], turnTemporaryMarkers: [],
-        claimedTracks: {}, winnerId: null,
-        players: { [localPlayerId]: playerObject }
+        maxPlayers: MAX_PLAYERS,
+        currentTurnPlayerId: null,
+        // gameBoardState: {}, // Initialize later if needed
+        // diceValues: [],      // Initialize later if needed
+        // turnTemporaryMarkers: [], // Already in existing code, keep it
+        // claimedTracks: {},      // Already in existing code, keep it
+        // winnerId: null,         // Already in existing code, keep it
+        // turnDiceRoll: [],       // Already in existing code, keep it
+        // turnChosenSums: [],     // Already in existing code, keep it
+        // turnBusted: false,      // Consider adding this
     };
     try {
         await db.collection('rooms').doc(currentRoomId).set(roomData);
         console.log(`Room created in Firestore with ID: ${currentRoomId} by ${localPlayerId}`);
-        players = [playerObject];
+        if(roomIdDisplay) roomIdDisplay.textContent = currentRoomId; // 部屋ID表示を更新
+        players = [playerObject]; // 自分の情報をローカルのplayers配列に追加
         alert(`部屋が作成されました。部屋ID: ${currentRoomId}`);
-        roomManagementDiv.style.display = 'none';
-        gameAreaDiv.style.display = 'block';
-        startGameButton.disabled = false;
+
+        // UI表示切替
+        // UI表示切替: 部屋管理を隠し、ゲーム情報関連を表示
+        showGameRelatedUI(true); // true for host
+
+
         listenToRoomUpdates(currentRoomId);
     } catch (error) {
         console.error("Error creating room: ", error);
         alert("部屋の作成に失敗しました。");
-        currentRoomId = null; localPlayerId = null;
+        currentRoomId = null;
+        localPlayerId = null;
     }
 }
 
@@ -140,39 +201,87 @@ async function createRoom() {
  * 部屋に参加する処理
  */
 async function joinRoom() {
-    currentPlayerName = playerNameInput.value.trim();
-    const roomIdToJoin = roomIdInput.value.trim();
-    if (!currentPlayerName) { alert("プレイヤー名を入力してください。"); return; }
-    if (!roomIdToJoin) { alert("部屋IDを入力してください。"); return; }
-    if (typeof db === 'undefined') { alert("データベースに接続できません。設定を確認してください。"); return; }
+    // DOM要素のIDが変更されたため、対応する変数を参照するように注意
+    const clientNameInput = document.getElementById('client-name');
+    if (!clientNameInput) { console.error("#client-name not found"); return; }
+    currentPlayerName = clientNameInput.value.trim();
+
+    if (!roomIdInput) { console.error("#room-id-input not found"); return; }
+    const roomIdToJoin = roomIdInput.value.trim().toUpperCase();
+
+    if (!currentPlayerName) {
+        alert("あなたの名前（参加者名）を入力してください。");
+        if (messageDisplay) messageDisplay.textContent = "参加者名を入力してください。";
+        return;
+    }
+    if (!roomIdToJoin) {
+        alert("参加する部屋IDを入力してください。");
+        if (messageDisplay) messageDisplay.textContent = "部屋IDを入力してください。";
+        return;
+    }
+    if (typeof db === 'undefined') {
+        alert("データベースに接続できません。Firebaseの設定を確認してください。");
+        if (messageDisplay) messageDisplay.textContent = "データベース接続エラー。";
+        return;
+    }
 
     try {
         const roomRef = db.collection('rooms').doc(roomIdToJoin);
         const roomDoc = await roomRef.get();
-        if (!roomDoc.exists) { alert("指定された部屋IDの部屋が見つかりません。"); return; }
+
+        if (!roomDoc.exists) {
+            alert("指定された部屋IDの部屋が見つかりません。");
+            if (messageDisplay) messageDisplay.textContent = `部屋ID ${roomIdToJoin} が見つかりません。`;
+            return;
+        }
 
         const roomData = roomDoc.data();
         const numPlayers = Object.keys(roomData.players).length;
-        if (numPlayers >= 4) { alert("この部屋は満員です。"); return; }
-        if (roomData.status !== "waiting") { alert("このゲームは既に開始されているか終了しています。"); return; }
 
-        localPlayerId = db.collection('rooms').doc().id.substring(0, 8);
+        if (numPlayers >= (roomData.maxPlayers || MAX_PLAYERS)) {
+            alert("この部屋は満員です。");
+            if (messageDisplay) messageDisplay.textContent = `部屋 ${roomIdToJoin} は満員です。`;
+            return;
+        }
+        if (roomData.status !== "waiting") {
+            alert("このゲームは既に開始されているか終了しています。");
+            if (messageDisplay) messageDisplay.textContent = `部屋 ${roomIdToJoin} は現在参加できません。`;
+            return;
+        }
+        // 同じ名前のプレイヤーが既にいないかチェック (簡易的)
+        if (Object.values(roomData.players).some(p => p.name === currentPlayerName)) {
+            alert("同じ名前のプレイヤーが既に部屋にいます。別の名前を入力してください。");
+            if (messageDisplay) messageDisplay.textContent = "その名前は既に使用されています。";
+            return;
+        }
+
+
+        localPlayerId = generatePlayerId();
         const playerObject = {
-            id: localPlayerId, name: currentPlayerName, color: PLAYER_COLORS[numPlayers],
-            joinOrder: numPlayers + 1, isHost: false, occupiedTracksCount: 0
+            id: localPlayerId,
+            name: currentPlayerName,
+            color: PLAYER_COLORS[numPlayers], // 参加順で色を決定
+            joinOrder: numPlayers + 1,
+            isHost: false,
+            occupiedTracksCount: 0
         };
-        await roomRef.update({ [`players.${localPlayerId}`]: playerObject });
+        await roomRef.update({
+            [`players.${localPlayerId}`]: playerObject
+        });
         currentRoomId = roomIdToJoin;
         console.log(`${currentPlayerName} joined room: ${currentRoomId}`);
         alert(`部屋 ${currentRoomId} に参加しました。`);
-        roomManagementDiv.style.display = 'none';
-        gameAreaDiv.style.display = 'block';
-        startGameButton.style.display = 'none';
+
+        // UI表示切替: 部屋管理を隠し、ゲーム情報関連を表示
+        showGameRelatedUI(false); // false for non-host
+
         listenToRoomUpdates(currentRoomId);
     } catch (error) {
         console.error("Error joining room: ", error);
-        alert("部屋への参加に失敗しました。");
-        localPlayerId = null; currentRoomId = null;
+        alert("部屋への参加に失敗しました。\n" + error.message);
+        if (messageDisplay) messageDisplay.textContent = "部屋参加エラー: " + error.message;
+        localPlayerId = null; // Reset local player ID on failure
+        currentRoomId = null; // Reset current room ID
     }
 }
 
@@ -183,31 +292,68 @@ async function startGame() {
     if (typeof db === 'undefined' || !currentRoomId) {
         alert("データベースに接続されていないか、部屋が存在しません。"); return;
     }
+    if (!currentRoomId || !localPlayerId) {
+        alert("部屋に参加していません。");
+        return;
+    }
     const roomRef = db.collection('rooms').doc(currentRoomId);
     try {
         const roomDoc = await roomRef.get();
-        if (!roomDoc.exists) { alert("部屋のデータが見つかりません。"); return; }
-        const roomData = roomDoc.data();
-        const playerIds = Object.keys(roomData.players);
-        if (playerIds.length < 2 || playerIds.length > 4) {
-            alert("ゲームを開始するには2～4人のプレイヤーが必要です。"); return;
+        if (!roomDoc.exists) {
+            alert("部屋のデータが見つかりません。");
+            if (messageDisplay) messageDisplay.textContent = "部屋データが見つかりません。";
+            return;
         }
-        let firstPlayerId = null; let minJoinOrder = Infinity;
-        for (const playerId in roomData.players) {
-            if (roomData.players[playerId].joinOrder < minJoinOrder) {
-                minJoinOrder = roomData.players[playerId].joinOrder;
-                firstPlayerId = playerId;
+        const roomData = roomDoc.data();
+
+        // ホストであるか確認 (追加のセキュリティチェック)
+        if (roomData.hostId !== localPlayerId) {
+            alert("ホストプレイヤーのみがゲームを開始できます。");
+            if (messageDisplay) messageDisplay.textContent = "ホストのみ開始可能です。";
+            return;
+        }
+
+        const numPlayers = Object.keys(roomData.players).length;
+        if (numPlayers < MIN_PLAYERS_TO_START) {
+            alert(`ゲームを開始するには最低${MIN_PLAYERS_TO_START}人のプレイヤーが必要です。現在${numPlayers}人です。`);
+            if (messageDisplay) messageDisplay.textContent = `最低${MIN_PLAYERS_TO_START}人が必要です。`;
+            return;
+        }
+
+        // 最初のプレイヤーを決定 (参加順 joinOrder が最も小さいプレイヤー)
+        let firstPlayerId = null;
+        let minJoinOrder = Infinity;
+        for (const pId in roomData.players) {
+            if (roomData.players[pId].joinOrder < minJoinOrder) {
+                minJoinOrder = roomData.players[pId].joinOrder;
+                firstPlayerId = pId;
             }
         }
-        if (!firstPlayerId) { alert("最初のプレイヤーを決定できませんでした。"); return; }
+
+        if (!firstPlayerId) {
+            alert("最初のプレイヤーを決定できませんでした。");
+            if (messageDisplay) messageDisplay.textContent = "開始プレイヤーエラー。";
+            return;
+        }
+
         await roomRef.update({
-            status: "playing", activePlayerId: firstPlayerId,
-            turnDiceRoll: [], turnTemporaryMarkers: [], claimedTracks: {}, winnerId: null
+            status: "playing",
+            activePlayerId: firstPlayerId,
+            // ゲーム開始時にリセットまたは初期化するフィールド
+            turnDiceRoll: [],
+            turnTemporaryMarkers: [],
+            turnChosenSums: [],
+            turnBusted: false,
+            claimedTracks: {},
+            winnerId: null,
+            // gameBoardState: initialGameBoardState() // 必要なら初期ボード状態を設定
         });
         console.log("Game started in Firestore! First turn:", firstPlayerId);
+        if (messageDisplay) messageDisplay.textContent = `ゲーム開始！ ${roomData.players[firstPlayerId].name}さんのターン。`;
     } catch (error) {
         console.error("Error starting game: ", error);
-        alert("ゲームの開始に失敗しました。");
+        alert("ゲームの開始に失敗しました。\n" + error.message);
+        if (messageDisplay) messageDisplay.textContent = "ゲーム開始エラー: " + error.message;
     }
 }
 
@@ -215,12 +361,24 @@ async function startGame() {
  * プレイヤーリスト表示を更新
  */
 function updatePlayersList() {
-    playersListDiv.innerHTML = '<h4>参加者:</h4>';
-    players.forEach(p => {
-        const pDiv = document.createElement('div');
-        pDiv.textContent = `${p.name} (${p.color})`;
-        pDiv.style.color = p.color;
-        playersListDiv.appendChild(pDiv);
+    if (!playerListUl) return;
+    playerListUl.innerHTML = ''; // リストをクリア
+    players.forEach((p, index) => { // index を使って色クラスを割り当てる
+        const li = document.createElement('li');
+        li.textContent = p.name;
+        // プレイヤーの色に対応するCSSクラスを適用 (例: player-color-0, player-color-1)
+        // PLAYER_COLORS配列のインデックスと合わせるため、playerIndex を使う
+        const playerColorIndex = PLAYER_COLORS.indexOf(p.color);
+        if (playerColorIndex !== -1) {
+            li.classList.add(`player-color-${playerColorIndex}`);
+        } else { // PLAYER_COLORSにない色の場合 (フォールバック)
+            li.style.color = p.color;
+        }
+        if (p.id === localPlayerId) {
+            li.textContent += " (あなた)";
+            li.style.fontWeight = 'bold';
+        }
+        playerListUl.appendChild(li);
     });
 }
 
@@ -228,11 +386,37 @@ function updatePlayersList() {
  * 現在のターンプレイヤー表示を更新
  */
 function updateCurrentPlayerDisplay() {
+    if (!currentPlayerDisplay) return;
     if (activePlayerId) {
         const activeP = players.find(p => p.id === activePlayerId);
-        currentPlayerSpan.textContent = activeP ? activeP.name : '未定';
+        currentPlayerDisplay.textContent = activeP ? activeP.name : '未定';
+        if (activeP && activeP.id === localPlayerId) {
+            currentPlayerDisplay.textContent += " (あなたのターン)";
+            currentPlayerDisplay.style.fontWeight = 'bold';
+        } else if (activeP) {
+             currentPlayerDisplay.style.fontWeight = 'normal';
+        }
     } else {
-        currentPlayerSpan.textContent = 'ゲーム開始前';
+        currentPlayerDisplay.textContent = 'ゲーム開始前';
+        currentPlayerDisplay.style.fontWeight = 'normal';
+    }
+}
+
+/**
+ * ダイス結果表示を更新
+ */
+function updateDiceResultDisplay(diceRolls) {
+    if (!diceResultDisplay) return;
+    diceResultDisplay.innerHTML = ''; // クリア
+    if (diceRolls && diceRolls.length > 0) {
+        diceRolls.forEach(roll => {
+            const diceValueSpan = document.createElement('span');
+            diceValueSpan.classList.add('dice-value');
+            diceValueSpan.textContent = roll;
+            diceResultDisplay.appendChild(diceValueSpan);
+        });
+    } else {
+        diceResultDisplay.textContent = '-'; // ダイスが振られていない場合
     }
 }
 
@@ -241,24 +425,67 @@ function updateCurrentPlayerDisplay() {
  */
 async function rollDice() {
     if (typeof db === 'undefined' || !currentRoomId || !localPlayerId) {
-        alert("データベースに接続されていないか、ゲームに参加していません。"); return;
+        alert("ゲームに参加していません。");
+        if (messageDisplay) messageDisplay.textContent = "ゲームに参加していません。";
+        return;
     }
     const roomRef = db.collection('rooms').doc(currentRoomId);
     try {
         const roomDoc = await roomRef.get();
-        if (!roomDoc.exists) { alert("部屋のデータが見つかりません。"); return; }
-        const roomData = roomDoc.data();
-        if (roomData.activePlayerId !== localPlayerId) { alert("あなたのターンではありません。"); return; }
-        if (roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0) {
-            alert("既にダイスは振られています。組み合わせを選択するか、ストップ/コンティニューしてください。"); return;
+        if (!roomDoc.exists) {
+            alert("部屋のデータが見つかりません。");
+            if (messageDisplay) messageDisplay.textContent = "部屋データエラー。";
+            return;
         }
-        const results = [];
-        for (let i = 0; i < 4; i++) { results.push(Math.floor(Math.random() * 6) + 1); }
-        await roomRef.update({ turnDiceRoll: results });
-        console.log("Dice rolled and results stored in Firestore:", results);
+        const roomData = roomDoc.data();
+
+        if (roomData.status !== "playing") {
+            alert("ゲームが進行中ではありません。");
+            return;
+        }
+        if (roomData.activePlayerId !== localPlayerId) {
+            alert("あなたのターンではありません。");
+            return;
+        }
+
+        const updates = {};
+        // 「続ける」場合: 既にダイスが振られ、マーカーが置かれている状態
+        // この場合はダイス関連情報のみリセットして新しいダイスを振る準備
+        if (roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0 &&
+            Object.keys(roomData.turnTemporaryMarkers || {}).length > 0 &&
+            !roomData.turnBusted) {
+            updates.turnDiceRoll = [];
+            updates.turnChosenSums = [];
+            updates.turnBusted = false;
+            // turnTemporaryMarkers は維持
+             console.log("Continuing turn, resetting dice info.");
+        } else if (roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0) {
+             alert("既にダイスは振られています。組み合わせを選択するかストップしてください。");
+             return;
+        }
+
+
+        // 新しいダイスを振る (最初のロールまたはリセット後のロール)
+        const diceResults = [];
+        for (let i = 0; i < 4; i++) {
+            diceResults.push(Math.floor(Math.random() * 6) + 1);
+        }
+        updates.turnDiceRoll = diceResults;
+        // 最初のロールの場合、他のフィールドもリセットする（既にupdatesでリセットされている場合もあるが念のため）
+        updates.turnChosenSums = [];
+        updates.turnBusted = false;
+        // 最初のロールの場合、turnTemporaryMarkersは前のターンのものがクリアされているか、空のはず。
+        // 「続ける」の場合は維持されているので、ここでは変更しない。
+        // もし最初のロールなら、前のプレイヤーのマーカーが残っている可能性はないはず（ターン終了時にクリアされるため）
+        // updates.turnTemporaryMarkers = {}; // ←これは「続ける」の場合にリセットしてしまうので不適切
+
+        await roomRef.update(updates);
+        console.log("Dice rolled/reset and results stored in Firestore:", updates);
+
     } catch (error) {
-        console.error("Error rolling dice: ", error);
-        alert("ダイスロールに失敗しました。");
+        console.error("Error in rollDice: ", error);
+        alert("ダイス処理に失敗しました。\n" + error.message);
+        if (messageDisplay) messageDisplay.textContent = "ダイス処理エラー: " + error.message;
     }
 }
 
@@ -273,353 +500,426 @@ function generateDiceCombinations(dice) {
 
     diceCombinationsDiv.innerHTML = '';
     diceCombinationAreaDiv.style.display = 'block';
-    const uniqueCombinations = []; const seenSums = new Set();
-    combinations.forEach(combo => {
-        const sum1 = combo[0][0] + combo[0][1];
-        const sum2 = combo[1][0] + combo[1][1];
-        const key = [sum1, sum2].sort().join(',');
-        if (!seenSums.has(key)) {
-            uniqueCombinations.push({ pair1: sum1, pair2: sum2, originalDice: combo });
-            seenSums.add(key);
+    // dice (array of 4 numbers)
+    if (!dice || dice.length !== 4) {
+        console.error("generateDiceCombinations: Invalid dice array provided.", dice);
+        if (diceCombinationChoiceArea) {
+            diceCombinationChoiceArea.innerHTML = '<p>ダイス情報が正しくありません。</p>';
+            diceCombinationChoiceArea.classList.remove('hidden');
+        }
+        return;
+    }
+
+    const allCombinationsInput = [
+        [[dice[0], dice[1]], [dice[2], dice[3]]], // (d1+d2), (d3+d4)
+        [[dice[0], dice[2]], [dice[1], dice[3]]], // (d1+d3), (d2+d4)
+        [[dice[0], dice[3]], [dice[1], dice[2]]]  // (d1+d4), (d2+d3)
+    ];
+
+    const uniqueSumPairs = [];
+    const seenPairKeys = new Set();
+
+    allCombinationsInput.forEach(comboGroup => {
+        const sum1 = comboGroup[0][0] + comboGroup[0][1];
+        const sum2 = comboGroup[1][0] + comboGroup[1][1];
+        // ソートしてキーにすることで、[3,7] と [7,3] を同じとみなす (ただし、キャントストップでは順番も意味を持つことがあるので、ここではそのまま扱う)
+        // const key = [sum1, sum2].sort().join(',');
+        // キャントストップのルールでは、2つのサイコロのペアの合計値が重要なので、ペアの順番は関係ない。
+        // しかし、(1+2)=3, (3+4)=7 と (3+4)=7, (1+2)=3 は同じ選択肢。
+        // ここでは、生成される3つの組み合わせグループがユーザーにとって異なる選択肢として提示されることを重視。
+
+        // 提示する文字列と実際の値(sum1, sum2)を保持
+        // comboGroup[0] は最初のペアのダイス目, comboGroup[1] は2番目のペアのダイス目
+        const displayString = `(${comboGroup[0].join('+')}=${sum1} と ${comboGroup[1].join('+')}=${sum2})`;
+        const value = [sum1, sum2]; // 保存する値
+
+        // 全く同じ組み合わせ (例: 1,1,2,2 のダイスで (1+1)=2, (2+2)=4 が複数回生成される場合) は避ける
+        const keyForUniqueness = value.slice().sort((a,b)=>a-b).join(','); // [2,4] のようなキー
+        if (!seenPairKeys.has(keyForUniqueness)) {
+            uniqueSumPairs.push({ display: displayString, value: value, originalDicePairs: comboGroup });
+            seenPairKeys.add(keyForUniqueness);
         }
     });
-    if (uniqueCombinations.length === 0 && combinations.length > 0) {
-        const sum1 = combinations[0][0][0] + combinations[0][0][1];
-        const sum2 = combinations[0][1][0] + combinations[0][1][1];
-        uniqueCombinations.push({ pair1: sum1, pair2: sum2, originalDice: combinations[0]});
-    }
-    uniqueCombinations.forEach((combo, index) => {
-        const label = document.createElement('label');
-        const radio = document.createElement('input');
-        radio.type = 'radio'; radio.name = 'diceCombination'; radio.value = index;
-        radio.dataset.sum1 = combo.pair1; radio.dataset.sum2 = combo.pair2;
-        label.appendChild(radio);
-        label.append(` (${combo.originalDice[0].join('+')}=${combo.pair1} と ${combo.originalDice[1].join('+')}=${combo.pair2})`);
-        diceCombinationsDiv.appendChild(label);
-    });
-    if (uniqueCombinations.length > 0) {
-        const selectButton = document.createElement('button');
-        selectButton.textContent = 'この組み合わせで進む';
-        selectButton.onclick = selectDiceCombination;
-        diceCombinationsDiv.appendChild(selectButton);
-    } else {
-        diceCombinationsDiv.textContent = '有効な組み合わせがありません。';
-        console.log("No valid combinations, potentially bust.");
-        // 自動バスト処理をここで行うか、プレイヤーに通知して手動でターンを終了させるか検討
-        // ここでは handleBust を直接呼ばず、UIで通知し、プレイヤーが手動で「ストップ」を押してバスト処理に進む流れも考えられる。
-        // 今回の仕様では、進行不可なら自動的にバストとして処理を進める。
-        if(localPlayerId === activePlayerId) { // 自分のターンで組み合わせがない場合のみ
-            handleBust();
+
+    if (diceCombinationChoiceArea) {
+        diceCombinationChoiceArea.innerHTML = ''; // クリア
+        if (uniqueSumPairs.length > 0) {
+            uniqueSumPairs.forEach((combo, index) => {
+                const label = document.createElement('label');
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'diceCombination';
+                radio.value = index; // インデックスで選択を識別
+                // データセットに実際の合計値ペアを文字列として保存 (例: "3,7")
+                radio.dataset.chosenSums = combo.value.join(',');
+                label.appendChild(radio);
+                label.append(` ${combo.display}`);
+                diceCombinationChoiceArea.appendChild(label);
+                diceCombinationChoiceArea.appendChild(document.createElement('br'));
+            });
+
+            const selectButton = document.createElement('button');
+            selectButton.id = 'confirm-combination-btn'; // ID付与
+            selectButton.textContent = 'この組み合わせで進む';
+            selectButton.onclick = selectDiceCombination; // 既存の関数名に合わせる
+            diceCombinationChoiceArea.appendChild(selectButton);
+        } else {
+            diceCombinationChoiceArea.innerHTML = '<p>有効なダイスの組み合わせがありません。</p>';
+            // この場合、ルールによってはバスト扱いになるが、それは selectDiceCombination や上位のロジックで判断
+            console.warn("No unique dice combinations found for dice:", dice);
+             // 進行不能なので自動的にバスト処理を呼び出すことを検討
+            if(localPlayerId === activePlayerId && roomData.status === "playing") { // roomDataはどこから？ listenToRoomUpdatesから渡す必要がある
+                 // handleBust(); // すぐにバストにするか、プレイヤーに通知するか
+                 // ここで直接 roomData を参照できないので、この関数の呼び出し元でバスト処理を検討する
+            }
         }
+        diceCombinationChoiceArea.classList.remove('hidden');
     }
-    console.log("Dice combinations generated:", uniqueCombinations);
+    console.log("Dice combinations generated and displayed:", uniqueSumPairs);
 }
 
 /**
  * 選択されたダイスの組み合わせでマーカーを進める処理
  */
+// `selectDiceCombination` はダイスペア選択後のマーカー進行ロジックを含むように拡張
 async function selectDiceCombination() {
-    if (typeof db === 'undefined' || !currentRoomId || !localPlayerId) return;
+    if (typeof db === 'undefined' || !currentRoomId || !localPlayerId) {
+        alert("ゲームに参加していません。");
+        if (messageDisplay) messageDisplay.textContent = "ゲームに参加していません。";
+        return;
+    }
+
     const selectedRadio = document.querySelector('input[name="diceCombination"]:checked');
-    if (!selectedRadio) { alert("ダイスの組み合わせを選択してください。"); return; }
+    if (!selectedRadio) {
+        alert("ダイスの組み合わせを選択してください。");
+        if (messageDisplay) messageDisplay.textContent = "組み合わせを選択してください。";
+        return;
+    }
 
-    const sum1 = parseInt(selectedRadio.dataset.sum1);
-    const sum2 = parseInt(selectedRadio.dataset.sum2);
+    const chosenSumsString = selectedRadio.dataset.chosenSums;
+    const chosenSums = chosenSumsString.split(',').map(s => parseInt(s.trim()));
+
+    if (!chosenSums || chosenSums.length !== 2) {
+        console.error("Invalid chosen combination:", chosenSums);
+        alert("選択された組み合わせが無効です。");
+        return;
+    }
+
     const roomRef = db.collection('rooms').doc(currentRoomId);
+
     try {
-        await db.runTransaction(async (transaction) => {
-            const roomDoc = await transaction.get(roomRef);
-            if (!roomDoc.exists) { throw "Room not found!"; }
-            const roomData = roomDoc.data();
-            if (roomData.activePlayerId !== localPlayerId) { throw "Not your turn!"; }
-            if (!roomData.turnDiceRoll || roomData.turnDiceRoll.length === 0) { throw "Dice not rolled yet for this turn!"; }
+        const roomDoc = await roomRef.get();
+        if (!roomDoc.exists) throw new Error("Room not found!");
 
-            let currentTempMarkers = JSON.parse(JSON.stringify(roomData.turnTemporaryMarkers || []));
-            const claimedTracksByAny = roomData.claimedTracks || {};
+        let roomData = roomDoc.data();
 
-            let canAdvanceSum1 = canAdvanceOnTrack(sum1, currentTempMarkers, claimedTracksByAny, localPlayerId);
-            let canAdvanceSum2 = canAdvanceOnTrack(sum2, currentTempMarkers, claimedTracksByAny, localPlayerId);
+        if (roomData.activePlayerId !== localPlayerId) { alert("あなたのターンではありません。"); return; }
+        if (!roomData.turnDiceRoll || roomData.turnDiceRoll.length === 0) { alert("まだダイスが振られていません。"); return; }
+        if (roomData.turnChosenSums && roomData.turnChosenSums.length > 0) { alert("既に組み合わせは選択済みです。"); return; }
 
-            const uniqueTracksInTemp = new Set(currentTempMarkers.map(m => m.track));
-            let newTracksAttempted = 0;
-            if (!uniqueTracksInTemp.has(sum1)) newTracksAttempted++;
-            if (sum1 !== sum2 && !uniqueTracksInTemp.has(sum2)) newTracksAttempted++;
+        let currentTurnTempMarkers = JSON.parse(JSON.stringify(roomData.turnTemporaryMarkers || {}));
+        const claimedCols = roomData.claimedColumns || {};
+        let canAdvanceAnyMarker = false;
+        let isBust = false;
 
-            if (uniqueTracksInTemp.size + newTracksAttempted > 3 && !(uniqueTracksInTemp.has(sum1) && uniqueTracksInTemp.has(sum2) && sum1 !== sum2) ) {
-                 // 既存のマーカーと新しいマーカーの合計が3を超える場合、かつ両方の目が既存のマーカーでない場合
-                 let sum1OnExisting = uniqueTracksInTemp.has(sum1);
-                 let sum2OnExisting = uniqueTracksInTemp.has(sum2);
-
-                 if (uniqueTracksInTemp.size === 3 && (!sum1OnExisting || (sum1 !== sum2 && !sum2OnExisting))) {
-                    console.log("Bust: Already 3 markers, and selected sums would require a new track or cannot both move existing.");
-                    await handleBust(); return;
-                 }
-                 if (uniqueTracksInTemp.size === 2 && newTracksAttempted === 2){ // 2つマーカーがあり、2つとも新しいトラック
-                     console.log("Bust: Already 2 markers, and selected sums are for two new tracks.");
-                     await handleBust(); return;
-                 }
-            }
-
-
-            let madeProgressThisSelection = false;
-            if (canAdvanceSum1) {
-                currentTempMarkers = attemptAdvance(sum1, currentTempMarkers, localPlayerId);
-                madeProgressThisSelection = true;
-            }
-             if (sum1 !== sum2) {
-                 canAdvanceSum2 = canAdvanceOnTrack(sum2, currentTempMarkers, claimedTracksByAny, localPlayerId); // 再評価
-                if (canAdvanceSum2) {
-                    currentTempMarkers = attemptAdvance(sum2, currentTempMarkers, localPlayerId);
-                    madeProgressThisSelection = true;
-                }
-            }
-            if (!madeProgressThisSelection) {
-                console.log("Bust: Could not advance on either sum.");
-                transaction.update(roomRef, { turnBusted: true });
-                await handleBust();
-                return;
-            }
-            transaction.update(roomRef, {
-                turnTemporaryMarkers: currentTempMarkers,
-                turnChosenSums: [sum1, sum2],
-                turnBusted: false
-            });
-            console.log("Temporary markers updated in Firestore:", currentTempMarkers);
-        });
-    } catch (error) {
-        console.error("Error selecting dice combination or transaction failed: ", error);
-        if (String(error).includes("Room not found")) { alert("部屋が見つかりません。"); }
-        else if (String(error).includes("Not your turn")) { alert("あなたのターンではありません。"); }
-        else if (String(error).includes("Dice not rolled")) { alert("まだダイスが振られていません。"); }
-    }
-}
-
-function attemptAdvance(trackNumber, tempMarkers, playerId) {
-    let marker = tempMarkers.find(m => m.track === trackNumber);
-    if (!marker) {
-        marker = { track: trackNumber, position: 1, playerId: playerId };
-        tempMarkers.push(marker);
-    } else {
-        if (marker.position < TRACK_CONFIG[trackNumber]) {
-            marker.position++;
+        function canPlaceOrAdvanceOnTrack(trackSum) {
+            if (trackSum < 2 || trackSum > 12) return false;
+            if (claimedCols[trackSum] && claimedCols[trackSum] !== localPlayerId) return false;
+            if (claimedCols[trackSum] && claimedCols[trackSum] === localPlayerId) return false;
+            const currentMarkerPosition = currentTurnTempMarkers[trackSum];
+            if (currentMarkerPosition && currentMarkerPosition >= TRACK_CONFIG[trackSum]) return false;
+            const tempMarkerCount = Object.keys(currentTurnTempMarkers).length;
+            if (!currentMarkerPosition && tempMarkerCount >= 3) return false;
+            return true;
         }
+
+        // chosenSums は [sum1, sum2] の形
+        const uniqueChosenSums = chosenSums[0] === chosenSums[1] ? [chosenSums[0]] : chosenSums;
+
+        for (const sum of uniqueChosenSums) {
+            if (canPlaceOrAdvanceOnTrack(sum)) {
+                if (currentTurnTempMarkers[sum]) {
+                    currentTurnTempMarkers[sum]++;
+                } else {
+                    currentTurnTempMarkers[sum] = 1;
+                }
+                canAdvanceAnyMarker = true;
+            }
+        }
+
+        if (!canAdvanceAnyMarker) {
+            isBust = true;
+            if (messageDisplay) messageDisplay.textContent = "バスト！選択した組み合わせでは進めません。";
+            console.log("Player busted. No valid moves for chosen sums.");
+        }
+
+        const updatesForFirestore = {
+            turnChosenSums: chosenSums,
+            turnTemporaryMarkers: isBust ? {} : currentTurnTempMarkers,
+            turnBusted: isBust,
+        };
+
+        if (isBust) {
+            updatesForFirestore.activePlayerId = getNextPlayerId(roomData);
+            updatesForFirestore.turnDiceRoll = []; // Reset for next player
+            updatesForFirestore.turnChosenSums = []; // Reset for next player
+            // turnTemporaryMarkers is already reset above
+        }
+
+        await roomRef.update(updatesForFirestore);
+
+        if (!isBust && messageDisplay) {
+            messageDisplay.textContent = `組み合わせ ${chosenSums.join(' と ')} を選択。マーカー更新。`;
+        }
+        console.log("Combination processed. Updates:", updatesForFirestore);
+
+    } catch (error) {
+        console.error("Error in selectDiceCombination (advancing markers): ", error);
+        alert("マーカー進行処理に失敗しました。\n" + error.message);
+        if (messageDisplay) messageDisplay.textContent = "マーカー進行エラー: " + error.message;
     }
-    return tempMarkers;
 }
 
-function canAdvanceOnTrack(trackNumber, currentTempMarkers, claimedTracksByAny, playerId) {
-    if (trackNumber < 2 || trackNumber > 12) return false;
-    if (claimedTracksByAny[trackNumber] && claimedTracksByAny[trackNumber] !== playerId) return false;
-    if (claimedTracksByAny[trackNumber] && claimedTracksByAny[trackNumber] === playerId) return false;
-    const markerOnThisTrack = currentTempMarkers.find(m => m.track === trackNumber);
-    if (markerOnThisTrack && markerOnThisTrack.position >= TRACK_CONFIG[trackNumber]) return false;
+// This function is now integrated into selectDiceCombination's logic
+// function attemptAdvance(trackNumber, tempMarkers, playerId) { ... }
 
-    const uniqueTracksInTemp = new Set(currentTempMarkers.map(m => m.track));
-    if (!markerOnThisTrack && uniqueTracksInTemp.size >= 3) return false;
-    return true;
-}
+// This function is now integrated into selectDiceCombination's logic
+// function canAdvanceOnTrack(trackNumber, currentTempMarkers, claimedTracksByAny, playerId) { ... }
+// } // selectDiceCombination の閉じ括弧だったが、上記コメントアウトにより不要になった
+
 
 /**
  * ボード上のマーカー表示を全体的に更新する
  */
-function updateBoardMarkers() {
-    document.querySelectorAll('.marker').forEach(m => m.remove());
-    const localPlayerObj = players.find(p => p.id === localPlayerId);
+function updateBoardMarkers(roomData) { // roomData を引数として受け取る
+    if (!gameBoardDiv) return;
+    // 既存のマーカーを全てクリア
+    gameBoardDiv.querySelectorAll('.temp-marker, .claim-marker').forEach(m => m.remove());
 
-    // 現在のターンプレイヤーの一時マーカーを描画
-    if (activePlayerId === localPlayerId && tempMarkersOnBoard) {
-        tempMarkersOnBoard.forEach(marker => {
-            if (!localPlayerObj) return;
-            let cellToPlaceOn = marker.position === 0 ?
-                gameBoardDiv.querySelector(`.track[data-track-number="${marker.track}"] .cant-stop-space`) :
-                gameBoardDiv.querySelector(`.track[data-track-number="${marker.track}"] .cell[data-cell="${marker.position}"]`);
+    if (!gameBoardDiv || !roomData) return;
+    gameBoardDiv.querySelectorAll('.temp-marker, .claim-marker').forEach(m => m.remove());
+
+    const getPlayerColorClass = (pId) => {
+        const player = roomData.players[pId]; // Assuming players is a map { id: playerObject }
+        if (player && player.color) {
+            const colorIndex = PLAYER_COLORS.indexOf(player.color);
+            return colorIndex !== -1 ? `player${colorIndex}` : 'player-default';
+        }
+        // Fallback if player or color not found, or if players is an array
+        const playerFromArray = players.find(p => p.id === pId);
+         if (playerFromArray && playerFromArray.color) {
+            const colorIndex = PLAYER_COLORS.indexOf(playerFromArray.color);
+            return colorIndex !== -1 ? `player${colorIndex}` : 'player-default';
+        }
+        return 'player-default';
+    };
+
+    // Draw current turn's temporary markers
+    if (roomData.activePlayerId && roomData.turnTemporaryMarkers) {
+        const activePlayerColorClass = getPlayerColorClass(roomData.activePlayerId);
+        for (const trackNumStr in roomData.turnTemporaryMarkers) {
+            const position = roomData.turnTemporaryMarkers[trackNumStr];
+            const trackSelector = `.track[data-track-number="${trackNumStr}"]`;
+            const cellSelector = `${trackSelector} .cell[data-cell-position="${position}"]`;
+            const cellToPlaceOn = gameBoardDiv.querySelector(cellSelector);
+
             if (cellToPlaceOn) {
                 const markerDiv = document.createElement('div');
-                markerDiv.classList.add('marker', 'temp-marker', `player-${players.indexOf(localPlayerObj) + 1}`);
-                (cellToPlaceOn.querySelector('.marker-container') || cellToPlaceOn).appendChild(markerDiv);
-            }
-        });
-    }
-
-    // 全プレイヤーの占領マーカーを描画
-    players.forEach((player, playerIndex) => {
-        const tracksOwnedByPlayer = [];
-        for(const trackNo in claimedTracks){
-            if(claimedTracks[trackNo] === player.id){
-                tracksOwnedByPlayer.push(parseInt(trackNo));
+                markerDiv.classList.add('temp-marker', activePlayerColorClass);
+                const markerContainer = cellToPlaceOn.querySelector('.marker-container');
+                if (markerContainer) markerContainer.appendChild(markerDiv);
             }
         }
-        tracksOwnedByPlayer.forEach(trackNum => {
-            const trackDiv = gameBoardDiv.querySelector(`.track[data-track-number="${trackNum}"]`);
-            if (trackDiv) {
-                const goalCell = trackDiv.querySelector(`.cell[data-cell="${TRACK_CONFIG[trackNum]}"]`);
-                if (goalCell) {
-                    const claimMarkerDiv = document.createElement('div');
-                    claimMarkerDiv.classList.add('marker', `player-${playerIndex + 1}`);
-                    claimMarkerDiv.textContent = 'C';
-                    claimMarkerDiv.style.fontSize = '10px';
-                    claimMarkerDiv.style.textAlign = 'center';
-                    claimMarkerDiv.style.lineHeight = '15px';
-                    (goalCell.querySelector('.marker-container') || goalCell).appendChild(claimMarkerDiv);
-                }
+    }
+
+    // Draw claimed columns (permanent markers)
+    if (roomData.claimedColumns) {
+        for (const trackNumStr in roomData.claimedColumns) {
+            const pId = roomData.claimedColumns[trackNumStr];
+            const claimedPlayerColorClass = getPlayerColorClass(pId);
+            const goalPosition = TRACK_CONFIG[trackNumStr];
+
+            const trackSelector = `.track[data-track-number="${trackNumStr}"]`;
+            const cellSelector = `${trackSelector} .cell[data-cell-position="${goalPosition}"]`;
+            const goalCell = gameBoardDiv.querySelector(cellSelector);
+
+            if (goalCell) {
+                const claimMarkerDiv = document.createElement('div');
+                claimMarkerDiv.classList.add('claim-marker', claimedPlayerColorClass);
+                const markerContainer = goalCell.querySelector('.marker-container');
+                if (markerContainer) markerContainer.appendChild(claimMarkerDiv);
             }
-        });
-    });
-    console.log("Board markers updated.");
+        }
+    }
+    // console.log("Board markers updated based on roomData:", roomData); // Be cautious with logging full roomData
 }
 
 /**
  * ストップ処理
  */
 async function stopTurn() {
-    if (typeof db === 'undefined' || !currentRoomId || !localPlayerId) return;
-    myTurnJustEndedAndBusted = false;
-    const roomRef = db.collection('rooms').doc(currentRoomId);
-    try {
-        await db.runTransaction(async (transaction) => {
-            const roomDoc = await transaction.get(roomRef);
-            if (!roomDoc.exists) throw "Room not found!";
-            let roomData = roomDoc.data();
-            if (roomData.activePlayerId !== localPlayerId) throw "Not your turn!";
-
-            let currentTempMarkers = roomData.turnTemporaryMarkers || [];
-            let currentClaimedTracks = roomData.claimedTracks || {};
-            let playerState = roomData.players[localPlayerId];
-            let playerOccupiedCount = 0;
-
-            Object.values(currentClaimedTracks).forEach(pId => { if (pId === localPlayerId) playerOccupiedCount++; });
-            currentTempMarkers.forEach(tempMarker => {
-                if (tempMarker.position >= TRACK_CONFIG[tempMarker.track]) {
-                    if (!currentClaimedTracks[tempMarker.track]) {
-                        currentClaimedTracks[tempMarker.track] = localPlayerId;
-                        playerOccupiedCount++;
-                    }
-                }
-            });
-            if (playerState) { playerState.occupiedTracksCount = playerOccupiedCount; }
-
-            let nextPlayerId = getNextPlayerId(roomData.players, localPlayerId);
-            let gameStatus = roomData.status; let winner = null;
-            if (playerOccupiedCount >= 3) {
-                gameStatus = "finished"; winner = localPlayerId;
-                console.log(`Player ${localPlayerId} wins!`);
-            }
-            const updates = {
-                status: gameStatus, winnerId: winner, activePlayerId: nextPlayerId,
-                turnDiceRoll: [], turnTemporaryMarkers: [], turnChosenSums: [], turnBusted: false,
-                claimedTracks: currentClaimedTracks,
-                [`players.${localPlayerId}.occupiedTracksCount`]: playerOccupiedCount
-            };
-            transaction.update(roomRef, updates);
-            console.log("Turn stopped. Firestore updated. Next player:", nextPlayerId);
-        });
-    } catch (error) {
-        console.error("Error stopping turn: ", error); alert("ストップ処理に失敗しました: " + error);
+    if (typeof db === 'undefined' || !currentRoomId || !localPlayerId) {
+        alert("ゲームに参加していません。"); return;
     }
-}
 
-function getNextPlayerId(playersMap, currentPlayerId) {
-    const playerArray = Object.values(playersMap).sort((a, b) => a.joinOrder - b.joinOrder);
-    const currentIndex = playerArray.findIndex(p => p.id === currentPlayerId);
-    const nextPlayer = playerArray[(currentIndex + 1) % playerArray.length];
-    return nextPlayer.id;
-}
-
-/**
- * 続ける処理
- */
-async function continueTurn() {
-    if (typeof db === 'undefined' || !currentRoomId || !localPlayerId) return;
-    myTurnJustEndedAndBusted = false;
     const roomRef = db.collection('rooms').doc(currentRoomId);
     try {
         const roomDoc = await roomRef.get();
-        if (!roomDoc.exists) throw "Room not found!";
-        const roomData = roomDoc.data();
-        if (roomData.activePlayerId !== localPlayerId) throw "Not your turn!";
-        await roomRef.update({
-            turnDiceRoll: [], turnChosenSums: [], turnBusted: false
-        });
-        console.log("Continuing turn. Dice roll reset in Firestore.");
-    } catch (error) {
-        console.error("Error continuing turn: ", error); alert("継続処理に失敗しました: " + error);
-    }
-}
+        if (!roomDoc.exists) throw new Error("Room not found!");
+        let roomData = roomDoc.data();
 
-/**
- * バスト処理
- */
-async function handleBust() {
-    if (typeof db === 'undefined' || !currentRoomId || !localPlayerId) {
-        console.warn("handleBust called without DB connection or room context, UI alert only.");
-        alert("バスト！このターンの進行は失われました。");
-        diceResultsDiv.innerHTML = ''; diceCombinationAreaDiv.style.display = 'none';
-        rollDiceButton.disabled = true; stopTurnButton.disabled = true; continueTurnButton.disabled = true;
-        return;
-    }
-    console.log(`Player ${localPlayerId} BUSTED. Updating Firestore.`);
-    if(activePlayerId === localPlayerId) { // バストしたのは自分自身
-      myTurnJustEndedAndBusted = true;
-    }
-    const roomRef = db.collection('rooms').doc(currentRoomId);
-    try {
-        await db.runTransaction(async (transaction) => {
-            const roomDoc = await transaction.get(roomRef);
-            if (!roomDoc.exists) throw "Room not found during bust!";
-            const roomData = roomDoc.data();
-            const nextPlayerId = getNextPlayerId(roomData.players, roomData.activePlayerId); // バストしたプレイヤーの次のプレイヤー
-            transaction.update(roomRef, {
-                activePlayerId: nextPlayerId,
-                turnDiceRoll: [], turnTemporaryMarkers: [], turnChosenSums: [],
-                turnBusted: true
-            });
-        });
-        console.log("Bust processed in Firestore.");
-         // バストのアラートは、自分のアクションでバストした場合に表示
-        if(activePlayerId === localPlayerId) { // このチェックはFirestore更新前なので注意。
-             alert("バスト！このターンの進行は失われました。");
+        if (roomData.activePlayerId !== localPlayerId) {
+            alert("あなたのターンではありません。"); return;
         }
+        if (roomData.status !== "playing") {
+            alert("ゲームは進行中ではありません。"); return;
+        }
+        if (roomData.turnBusted) {
+            alert("バストしています。ストップできません（ターンは自動的に終了します）。"); return;
+        }
+        if (Object.keys(roomData.turnTemporaryMarkers || {}).length === 0) {
+            alert("進めたマーカーがありません。ダイスを振るか、有効な組み合わせを選んでください。"); return;
+        }
+
+        let updatedClaimedColumns = { ...(roomData.claimedColumns || {}) };
+        let newColumnsClaimedThisTurn = 0;
+
+        for (const colStr in roomData.turnTemporaryMarkers) {
+            const position = roomData.turnTemporaryMarkers[colStr];
+            const trackGoal = TRACK_CONFIG[colStr];
+            if (position >= trackGoal && !updatedClaimedColumns[colStr]) { // ゴールに到達していて、まだ誰も占領していない
+                updatedClaimedColumns[colStr] = localPlayerId;
+                newColumnsClaimedThisTurn++;
+            }
+        }
+
+        // プレイヤーごとの占領列数を更新 (Firestoreのplayersマップを直接更新)
+        // 注意: Firestoreの特定プレイヤーのフィールドを更新するには、そのプレイヤーの正確なIDが必要
+        // roomData.players[localPlayerId] が存在することを期待
+        let playerOccupiedCount = 0;
+        if(roomData.players && roomData.players[localPlayerId]) {
+            // まず現在の占領数を計算
+             for (const col in updatedClaimedColumns) {
+                if (updatedClaimedColumns[col] === localPlayerId) {
+                    playerOccupiedCount++;
+                }
+            }
+        }
+
+
+        const updates = {
+            claimedColumns: updatedClaimedColumns,
+            currentTurnTemporaryMarkers: {}, // 一時マーカーをクリア
+            turnDiceRoll: [],
+            turnChosenSums: [],
+            turnBusted: false,
+            activePlayerId: getNextPlayerId(roomData), // 次のプレイヤーへ
+            // [`players.${localPlayerId}.occupiedTracksCount`]: playerOccupiedCount, // Firestoreの特定プレイヤーフィールド更新
+        };
+
+        // 勝利条件のチェック
+        if (playerOccupiedCount >= 3) { // 3列占領で勝利
+            updates.status = "finished";
+            updates.winnerId = localPlayerId;
+            console.log(`Player ${localPlayerId} wins!`);
+            if (messageDisplay) messageDisplay.textContent = `プレイヤー ${roomData.players[localPlayerId]?.name} の勝利！`;
+        }
+
+
+        await roomRef.update(updates);
+        console.log("Turn stopped. Firestore updated. Next player:", updates.activePlayerId);
+        if (messageDisplay && updates.status !== "finished") messageDisplay.textContent = "ターン終了。次のプレイヤーの番です。";
+
     } catch (error) {
-        console.error("Error handling bust in Firestore: ", error);
+        console.error("Error stopping turn: ", error);
+        alert("ストップ処理に失敗しました。\n" + error.message);
+        if (messageDisplay) messageDisplay.textContent = "ストップエラー: " + error.message;
     }
 }
 
-/**
- * 指定したトラックが他のプレイヤーに占領されているか
- */
-function isTrackClaimedByOther(trackNumber, currentPlayerId) {
-    return claimedTracks[trackNumber] && claimedTracks[trackNumber] !== currentPlayerId;
+function getNextPlayerId(roomData) {
+    if (!roomData || !roomData.players || !roomData.activePlayerId) return null;
+    const playerIds = Object.keys(roomData.players).sort((a,b) => roomData.players[a].joinOrder - roomData.players[b].joinOrder);
+    const currentIndex = playerIds.indexOf(roomData.activePlayerId);
+    return playerIds[(currentIndex + 1) % playerIds.length];
 }
 
-/**
- * 勝利条件のチェック
- */
-function checkWinCondition(playerId) {
-    const player = players.find(p => p.id === playerId);
-    // occupiedTracksCount は Firestore から同期された player オブジェクト内にあるはず
-    if (player && player.occupiedTracksCount >= 3) {
-        console.log(`Player ${playerId} meets win condition with ${player.occupiedTracksCount} tracks.`);
-        return true;
-    }
-    return false;
+// continueTurn は rollDiceButton のアクションに統合されるため、独立した関数としては不要になる
+// async function continueTurn() { ... }
+
+
+// handleBust は selectDiceCombination 内のロジックに統合
+// バストが確定したら、selectDiceCombination がFirestoreに必要な更新（一時マーカークリア、次のプレイヤーなど）を行う
+// async function handleBust() { ... }
+
+
+// isTrackClaimedByOther は selectDiceCombination 内の canPlaceOrAdvance で同様のチェックを行う
+// function isTrackClaimedByOther(trackNumber, currentPlayerId) { ... }
+
+// checkWinCondition は stopTurn 内で直接処理
+// function checkWinCondition(playerId) { ... }
 }
 
 // --- イベントリスナー ---
-createRoomButton.addEventListener('click', createRoom);
-joinRoomButton.addEventListener('click', joinRoom);
-startGameButton.addEventListener('click', startGame);
-rollDiceButton.addEventListener('click', rollDice);
-stopTurnButton.addEventListener('click', stopTurn);
-continueTurnButton.addEventListener('click', continueTurn);
+// HTMLのID変更に合わせて、イベントリスナーの対象も更新
+if (createRoomButton) createRoomButton.addEventListener('click', createRoom);
+if (joinRoomButton) joinRoomButton.addEventListener('click', joinRoom);
+if (startGameButton) startGameButton.addEventListener('click', startGame);
+if (rollDiceButton) rollDiceButton.addEventListener('click', rollDice);
+if (stopButton) stopButton.addEventListener('click', stopTurn);
+// continueTurnButton のリスナーは削除またはコメントアウト
+
+// ヘルパー関数
+function generatePlayerId() {
+    return Math.random().toString(36).substr(2, 9);
+}
+
+function generateRoomId() {
+    return Math.random().toString(36).substr(2, 6).toUpperCase();
+}
+
+function showGameRelatedUI(isHost) {
+    if (roomManagementDiv) roomManagementDiv.classList.add('hidden'); // or .style.display = 'none'
+    if (gameInfoDiv) gameInfoDiv.classList.remove('hidden');
+    if (playerListAreaDiv) playerListAreaDiv.classList.remove('hidden');
+    if (gameBoardDiv) gameBoardDiv.classList.remove('hidden'); // game-boardはflex displayなので注意
+    if (diceAreaDiv) diceAreaDiv.classList.remove('hidden');
+    if (actionAreaDiv) actionAreaDiv.classList.remove('hidden');
+
+    if (startGameButton) {
+        if (isHost) {
+            startGameButton.classList.remove('hidden');
+            startGameButton.disabled = false; // ホストは最初は有効（プレイヤー数チェックはstartGame関数内）
+        } else {
+            startGameButton.classList.add('hidden');
+        }
+    }
+}
+
+function showRoomManagementUI() {
+    if (roomManagementDiv) roomManagementDiv.classList.remove('hidden');
+    if (gameInfoDiv) gameInfoDiv.classList.add('hidden');
+    if (playerListAreaDiv) playerListAreaDiv.classList.add('hidden');
+    if (gameBoardDiv) gameBoardDiv.classList.add('hidden');
+    if (diceAreaDiv) diceAreaDiv.classList.add('hidden');
+    if (actionAreaDiv) actionAreaDiv.classList.add('hidden');
+    if (startGameButton) startGameButton.classList.add('hidden');
+    if (rollDiceButton) rollDiceButton.disabled = true;
+    if (stopButton) stopButton.disabled = true;
+    if (roomIdDisplay) roomIdDisplay.textContent = '';
+    if (messageDisplay) messageDisplay.textContent = '';
+}
+
 
 // --- 初期化処理 ---
-drawGameBoard();
-updatePlayersList();
-updateCurrentPlayerDisplay();
-rollDiceButton.disabled = true;
-stopTurnButton.disabled = true;
-continueTurnButton.disabled = true;
-console.log("script.js loaded and initial setup complete.");
+document.addEventListener('DOMContentLoaded', () => {
+    drawGameBoard(); // ゲームボードを描画
+    showRoomManagementUI(); // 初期は部屋管理UIのみ表示
+    updatePlayersList(); // プレイヤーリスト初期化 (空のはず)
+    updateCurrentPlayerDisplay(); // 現在のプレイヤー表示初期化
+    updateDiceResultDisplay([]); // ダイス表示初期化
+    console.log("script.js loaded and initial setup complete.");
+});
 
 // Firestoreのルーム更新をリッスンする関数
 let roomUnsubscribe = null;
@@ -639,88 +939,211 @@ function listenToRoomUpdates(roomId) {
                 const roomData = doc.data();
                 console.log("Room data snapshot received: ", roomData);
 
-                const previousActivePlayerForBustCheck = activePlayerId; // バスト通知のための直前のターンプレイヤー
+                const previousActivePlayerForBustCheck = activePlayerId;
 
                 players = Object.values(roomData.players || {}).sort((a,b) => a.joinOrder - b.joinOrder);
                 activePlayerId = roomData.activePlayerId;
                 claimedTracks = roomData.claimedTracks || {};
-                tempMarkersOnBoard = (roomData.activePlayerId === localPlayerId) ? (roomData.turnTemporaryMarkers || []) : [];
+                // 一時マーカーは常にFirestoreの最新状態を参照 (自分のものだけでなくても良いかもしれないが、一旦このまま)
+                tempMarkersOnBoard = roomData.turnTemporaryMarkers || [];
+
 
                 updatePlayersList();
                 updateCurrentPlayerDisplay();
-                updateBoardMarkers();
+                updateBoardMarkers(); // ボードマーカー更新はFirestoreデータに基づいて行う
+                updateDiceResultDisplay(roomData.turnDiceRoll); // ダイス表示更新
 
                 const myTurn = roomData.activePlayerId === localPlayerId;
 
-                if (roomData.status === 'playing') {
-                    roomManagementDiv.style.display = 'none';
-                    gameAreaDiv.style.display = 'block';
-                    startGameButton.disabled = true;
-
-                    if (roomData.turnBusted && previousActivePlayerForBustCheck === localPlayerId && !myTurn) {
-                        // 自分がバストしてターンが移ったことを検知
-                         if(myTurnJustEndedAndBusted){ //自分のアクションでバストした場合のフラグ
-                            // alert("バスト！あなたの進行は失われました。"); // handleBust内で表示するので重複を避ける
-                            console.log("Confirmed: Your turn ended with a bust.");
-                            myTurnJustEndedAndBusted = false; // フラグをリセット
-                         }
-                    }
-
-                    rollDiceButton.disabled = !myTurn || (roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0);
-                    const canStopOrContinue = myTurn && (roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0) && !roomData.turnBusted;
-                    stopTurnButton.disabled = !canStopOrContinue;
-                    continueTurnButton.disabled = !canStopOrContinue;
-
-                    if (myTurn && roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0 && !roomData.turnBusted) {
-                        diceResultsDiv.innerHTML = '';
-                        roomData.turnDiceRoll.forEach(roll => {
-                            const diceDiv = document.createElement('div');
-                            diceDiv.classList.add('dice'); diceDiv.textContent = roll;
-                            diceResultsDiv.appendChild(diceDiv);
-                        });
-                        if (diceCombinationAreaDiv.style.display === 'none' && (!roomData.turnChosenSums || roomData.turnChosenSums.length === 0) ) {
-                             generateDiceCombinations(roomData.turnDiceRoll);
-                        } else if (roomData.turnChosenSums && roomData.turnChosenSums.length > 0) {
-                             diceCombinationAreaDiv.style.display = 'block';
-                             const comboSelectBtn = diceCombinationAreaDiv.querySelector('button');
-                             if(comboSelectBtn) comboSelectBtn.disabled = true;
+                // メッセージ表示更新
+                if (messageDisplay) {
+                    if (roomData.status === 'playing') {
+                        if (myTurn) {
+                            messageDisplay.textContent = "あなたのターンです！";
+                        } else {
+                            const activeP = players.find(p => p.id === roomData.activePlayerId);
+                            messageDisplay.textContent = activeP ? `${activeP.name}さんのターンです。` : "ゲームプレイ中";
                         }
-                    } else {
-                        diceResultsDiv.innerHTML = '';
-                        diceCombinationAreaDiv.style.display = 'none';
-                    }
-                } else if (roomData.status === 'waiting') {
-                    roomManagementDiv.style.display = 'block';
-                    gameAreaDiv.style.display = 'none';
-                    const amIHost = roomData.hostPlayerId === localPlayerId;
-                    const playerCount = Object.keys(roomData.players).length;
-                    startGameButton.disabled = !(amIHost && playerCount >= 2 && playerCount <= 4);
-                    startGameButton.style.display = amIHost ? 'inline-block' : 'none';
-                } else if (roomData.status === 'finished') {
-                    roomManagementDiv.style.display = 'none';
-                    gameAreaDiv.style.display = 'block';
-                    rollDiceButton.disabled = true; stopTurnButton.disabled = true; continueTurnButton.disabled = true;
-                    diceResultsDiv.innerHTML = ''; diceCombinationAreaDiv.style.display = 'none';
-                    const winner = players.find(p => p.id === roomData.winnerId);
-                    if (winner) {
-                        currentPlayerSpan.innerHTML = `勝者: <strong style="color:${winner.color};">${winner.name}</strong> さん！おめでとうございます！`;
-                        if(localPlayerId === roomData.winnerId || !doc.metadata.hasPendingWrites){ //自分が勝者か、他のプレイヤーの更新ならアラート
-                             alert(`ゲーム終了！ 勝者は ${winner.name} さんです！`);
+                        if (roomData.turnBusted && roomData.activePlayerId !== previousActivePlayerForBustCheck) {
+                             const bustedPlayer = players.find(p => p.id === previousActivePlayerForBustCheck);
+                             if (bustedPlayer) {
+                                messageDisplay.textContent = `${bustedPlayer.name}さんはバストしました。${myTurn ? "あなたのターンです！" : (players.find(p => p.id === roomData.activePlayerId)?.name || "") + "さんのターンです。"}`;
+                             }
                         }
-                    } else {
-                        currentPlayerSpan.textContent = "ゲーム終了";
-                        if(!doc.metadata.hasPendingWrites) alert("ゲーム終了！");
+                    } else if (roomData.status === 'waiting') {
+                        messageDisplay.textContent = "プレイヤーの参加を待っています...";
+                    } else if (roomData.status === 'finished') {
+                        // 勝利メッセージは後述
                     }
                 }
-                previousActivePlayerId = roomData.activePlayerId; // 常に最後に更新
-            } else {
-                console.log("Room data no longer exists or access denied.");
+
+
+                if (roomData.status === 'playing') {
+                    showGameRelatedUI(roomData.hostId === localPlayerId); // isHostを渡す
+                    if (startGameButton) startGameButton.classList.add('hidden'); // ゲーム中は開始ボタンを隠す
+
+
+                    // UI更新をroomDataに基づいて行う
+                    updatePlayersList(); // players はグローバル変数だが、roomData.players を使う方が良い場合もある
+                    updateCurrentPlayerDisplay(); // activePlayerId はグローバル変数
+                    updateBoardMarkers(roomData); // roomData を引数として渡す
+                    updateDiceResultDisplay(roomData.turnDiceRoll);
+
+
+                    const myTurn = roomData.activePlayerId === localPlayerId;
+
+                    if (messageDisplay) { // メッセージ表示ロジック
+                        if (roomData.turnBusted && roomData.activePlayerId === localPlayerId) { // 自分がバストした直後
+                             messageDisplay.textContent = "バスト！あなたの進行はリセットされました。次のプレイヤーの番です。";
+                             // このメッセージはターンが移るまで表示される
+                        } else if (roomData.turnBusted && roomData.activePlayerId !== localPlayerId && previousActivePlayerForBustCheck === localPlayerId) {
+                            //自分がバストしてターンが移った後 (この条件は少し複雑、必要なら調整)
+                            messageDisplay.textContent = "あなたはバストしました。";
+                        }
+                        else if (roomData.status === 'playing') {
+                            if (myTurn) messageDisplay.textContent = "あなたのターンです。";
+                            else {
+                                const activeP = players.find(p => p.id === roomData.activePlayerId);
+                                messageDisplay.textContent = activeP ? `${activeP.name}さんのターンです。` : "ゲームプレイ中";
+                            }
+                        } else if (roomData.status === 'waiting') {
+                            messageDisplay.textContent = "プレイヤーの参加を待っています...";
+                        } // finished のメッセージは後で
+                    }
+
+
+                    if (roomData.status === 'playing') {
+                        showGameRelatedUI(roomData.hostId === localPlayerId);
+                        if (startGameButton) startGameButton.classList.add('hidden');
+
+                        if (startGameButton) startGameButton.classList.add('hidden'); // ゲーム中は非表示
+
+                        const isMyTurn = roomData.activePlayerId === localPlayerId;
+                        const diceRolled = roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0;
+                        const combinationChosen = roomData.turnChosenSums && roomData.turnChosenSums.length > 0;
+                        const isBusted = roomData.turnBusted;
+                        const tempMarkersExist = Object.keys(roomData.turnTemporaryMarkers || {}).length > 0;
+
+                        // ダイスを振る/続けるボタンの制御
+                        if (rollDiceButton) {
+                            // 最初のロール: 自分のターン、バストしてない、ダイスロール前
+                            const canMakeFirstRoll = isMyTurn && !isBusted && !diceRolled;
+                            // 続ける: 自分のターン、バストしてない、組み合わせ選択済み、マーカー進行済み
+                            const canContinue = isMyTurn && !isBusted && diceRolled && combinationChosen && tempMarkersExist;
+                            rollDiceButton.disabled = !(canMakeFirstRoll || canContinue);
+                            rollDiceButton.textContent = (diceRolled && tempMarkersExist) ? '続ける' : 'ダイスを振る';
+                        }
+
+                        // ストップボタンの制御
+                        if (stopButton) {
+                            stopButton.disabled = !(isMyTurn && !isBusted && diceRolled && tempMarkersExist);
+                        }
+
+                        // ダイス組み合わせ表示ロジック
+                        if (isMyTurn && diceRolled && !isBusted) {
+                            if (!combinationChosen) { // まだ組み合わせを選んでいない
+                                if (diceCombinationChoiceArea) {
+                                    diceCombinationChoiceArea.innerHTML = ''; // クリア
+                                    generateDiceCombinations(roomData.turnDiceRoll);
+                                    diceCombinationChoiceArea.classList.remove('hidden');
+                                }
+                            } else { // 組み合わせ選択済み
+                                if (diceCombinationChoiceArea) {
+                                    // 表示はそのままに、操作を不可にする
+                                    diceCombinationChoiceArea.querySelectorAll('input, button').forEach(el => el.disabled = true);
+                                    diceCombinationChoiceArea.classList.remove('hidden');
+                                }
+                            }
+                        } else { // 自分のターンでない、またはダイスロール前、またはバストした
+                            if (diceCombinationChoiceArea) diceCombinationChoiceArea.classList.add('hidden');
+                        }
+
+                        // バストした場合のUI処理 (メッセージ表示は既にある程度カバーされている)
+                        if (isBusted && isMyTurn) { // 自分のターンでバストした
+                           // ターンは selectDiceCombination で自動的に次に移るので、ここでは特別なボタン操作は不要
+                           // メッセージ表示で十分
+                           if (messageDisplay) messageDisplay.textContent = "バストしました！ターン終了です。";
+                        }
+                    }
+                } else if (roomData.status === 'waiting') {
+                    showRoomManagementUI();
+                    if (gameInfoDiv) gameInfoDiv.classList.remove('hidden'); // 参加者リストなどのために表示
+                    if (playerListAreaDiv) playerListAreaDiv.classList.remove('hidden');
+                    if (gameBoardDiv) gameBoardDiv.classList.add('hidden');
+                    if (diceAreaDiv) diceAreaDiv.classList.add('hidden');
+                    if (actionAreaDiv) actionAreaDiv.classList.add('hidden');
+                    if (messageDisplay) messageDisplay.textContent = "プレイヤーの参加を待っています...";
+
+                    const amIHost = roomData.hostId === localPlayerId;
+                    const numPlayers = Object.keys(roomData.players).length;
+                    if (startGameButton) {
+                        startGameButton.disabled = !(amIHost && numPlayers >= MIN_PLAYERS_TO_START && numPlayers <= MAX_PLAYERS);
+                        if (amIHost) startGameButton.classList.remove('hidden');
+                        else startGameButton.classList.add('hidden');
+                    }
+                } else if (roomData.status === 'waiting') {
+                    // UIを待機状態に
+                    showRoomManagementUI(); // 部屋管理UIに戻すか、専用の待機UIを作るか
+                    // listenToRoomUpdates の中で再度 showGameRelatedUI が呼ばれるので、
+                    // ここで roomManagementDiv を表示するとちらつく可能性がある。
+                    // 代わりに、gameInfoDiv などに「待機中」のメッセージを出す。
+                    if(gameInfoDiv) gameInfoDiv.classList.remove('hidden');
+                    if(playerListAreaDiv) playerListAreaDiv.classList.remove('hidden'); // 参加者リストは表示
+                    if(gameBoardDiv) gameBoardDiv.classList.add('hidden');
+                    if(diceAreaDiv) diceAreaDiv.classList.add('hidden');
+                    if(actionAreaDiv) actionAreaDiv.classList.add('hidden');
+
+
+                    const amIHost = roomData.hostId === localPlayerId;
+                    const numPlayers = Object.keys(roomData.players).length;
+                    if (startGameButton) {
+                        startGameButton.disabled = !(amIHost && numPlayers >= MIN_PLAYERS_TO_START && numPlayers <= MAX_PLAYERS);
+                        if(amIHost) startGameButton.classList.remove('hidden');
+                        else startGameButton.classList.add('hidden');
+                    }
+                } else if (roomData.status === 'finished') {
+                    showGameRelatedUI(roomData.hostId === localPlayerId); // isHost
+                    if (rollDiceButton) rollDiceButton.disabled = true;
+                    if (stopButton) stopButton.disabled = true;
+                    if (diceCombinationChoiceArea) diceCombinationChoiceArea.style.display = 'none';
+                    if (startGameButton) startGameButton.classList.add('hidden');
+
+                    const winner = players.find(p => p.id === roomData.winnerId);
+                    if (winner) {
+                        if (currentPlayerDisplay) currentPlayerDisplay.innerHTML = `勝者: <strong style="color:${winner.color};">${winner.name}</strong> さん！`;
+                        if (messageDisplay) messageDisplay.textContent = "ゲーム終了！おめでとうございます！";
+                        if (localPlayerId === roomData.winnerId || (!doc.metadata.hasPendingWrites && roomData.winnerId)) {
+                            // 自分が勝者、または他の誰かが勝ってデータが確定した場合にアラート
+                            setTimeout(() => alert(`ゲーム終了！ 勝者は ${winner.name} さんです！`), 100); // Give UI time to update
+                        }
+                    } else {
+                        if (currentPlayerDisplay) currentPlayerDisplay.textContent = "ゲーム終了";
+                        if (messageDisplay) messageDisplay.textContent = "ゲームが終了しました。";
+                         if (!doc.metadata.hasPendingWrites) { // データ確定後
+                            setTimeout(() => alert("ゲーム終了！"), 100);
+                         }
+                    }
+                }
+                previousActivePlayerId = roomData.activePlayerId;
+
+            } else { // doc.exists === false or access denied
+                console.warn("Room data no longer exists or access denied for room:", roomId);
                 alert("部屋の情報が見つからないか、アクセスが拒否されました。ロビーに戻ります。");
-                if (roomUnsubscribe) { roomUnsubscribe(); roomUnsubscribe = null; }
-                roomManagementDiv.style.display = 'block'; gameAreaDiv.style.display = 'none';
-                currentRoomId = null; localPlayerId = null;
-                players = []; activePlayerId = null; claimedTracks = {}; tempMarkersOnBoard = [];
-                updatePlayersList(); updateCurrentPlayerDisplay(); updateBoardMarkers();
+                if (roomUnsubscribe) {
+                    roomUnsubscribe();
+                    roomUnsubscribe = null;
+                }
+                showRoomManagementUI(); // 初期UIに戻す
+                currentRoomId = null;
+                localPlayerId = null;
+                players = [];
+                activePlayerId = null;
+                claimedTracks = {};
+                tempMarkersOnBoard = [];
+                updatePlayersList();
+                updateCurrentPlayerDisplay();
+                updateBoardMarkers();
+                updateDiceResultDisplay([]);
             }
         }, (error) => {
             console.error("Error listening to room updates: ", error);

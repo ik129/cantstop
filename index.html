@@ -3,70 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>キャントストップ</title>
+    <title>キャントストップ オンライン</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="game-container">
-        <header>
-            <h1>キャントストップ</h1>
-        </header>
+    <header>
+        <h1>キャントストップ</h1>
+    </header>
 
-        <div id="room-management">
-            <h2>部屋管理</h2>
-            <div>
-                <label for="player-name">プレイヤー名:</label>
-                <input type="text" id="player-name" name="player-name">
-            </div>
-            <div>
-                <button id="create-room">部屋を作成</button>
-            </div>
-            <div>
-                <label for="room-id">部屋ID:</label>
-                <input type="text" id="room-id" name="room-id">
-                <button id="join-room">部屋に入る</button>
-            </div>
-            <div>
-                <button id="start-game" disabled>ゲームを開始</button>
-            </div>
+    <div id="room-management">
+        <h2>部屋管理</h2>
+        <div>
+            <h3>部屋を作成</h3>
+            <input type="text" id="host-name" placeholder="あなたの名前">
+            <button id="create-room-btn">部屋を作成</button>
+            <p>部屋ID: <span id="room-id-display"></span></p>
         </div>
-
-        <main id="game-area" style="display: none;">
-            <div id="player-info">
-                <h3>プレイヤー情報</h3>
-                <div id="current-player">現在のプレイヤー: <span></span></div>
-                <div id="players-list">
-                    <!-- プレイヤーごとの情報がここに表示される -->
-                </div>
-            </div>
-
-            <div id="game-board">
-                <!-- トラックとマスがここに動的に生成される -->
-            </div>
-
-            <div id="dice-area">
-                <h3>ダイス</h3>
-                <div id="dice-results">
-                    <!-- ダイスの結果がここに表示される -->
-                </div>
-                <button id="roll-dice" disabled>ダイスを振る</button>
-            </div>
-
-            <div id="dice-combination-area" style="display: none;">
-                <h4>ダイスの組み合わせを選択</h4>
-                <div id="dice-combinations">
-                    <!-- ダイスの組み合わせの選択肢がここに表示される -->
-                </div>
-            </div>
-
-            <div id="controls">
-                <h3>操作</h3>
-                <button id="stop-turn" disabled>ストップ</button>
-                <button id="continue-turn" disabled>続ける</button>
-            </div>
-        </main>
+        <hr>
+        <div>
+            <h3>部屋に参加</h3>
+            <input type="text" id="client-name" placeholder="あなたの名前">
+            <input type="text" id="room-id-input" placeholder="部屋ID">
+            <button id="join-room-btn">部屋に入る</button>
+        </div>
     </div>
 
+    <div id="game-info" style="display:none;">
+        <h2>ゲーム情報</h2>
+        <p>現在のプレイヤー: <span id="current-player-display"></span></p>
+        <p id="message-display"></p>
+        <button id="start-game-btn" style="display:none;">ゲームを開始</button>
+    </div>
+
+    <div id="game-board" style="display:none;">
+        <!-- JavaScriptによって動的にゲームボードが描画される場所 -->
+    </div>
+
+    <div id="dice-area" style="display:none;">
+        <h3>ダイス</h3>
+        <p>ダイス: <span id="dice-result-display"></span></p>
+        <button id="roll-dice-btn">ダイスを振る</button>
+    </div>
+
+    <div id="action-area" style="display:none;">
+        <h3>アクション</h3>
+        <!-- ペア選択の指示やUI要素を配置するエリア -->
+        <div id="dice-combination-choice-area">
+             <!-- ダイスの組み合わせ選択肢がここに表示される (script.jsで制御) -->
+        </div>
+        <button id="stop-btn">ストップ</button>
+        <!-- 「続ける」は roll-dice-btn の再活性化や、別のUIで表現する可能性あり -->
+    </div>
+
+    <div id="player-list-area" style="display:none;">
+        <h3>参加者:</h3>
+        <ul id="player-list">
+            <!-- JavaScriptでプレイヤー名がリストアイテムとして追加される -->
+        </ul>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <!-- Firebase Config and App Script -->
     <script src="firebase-config.js"></script>
     <script src="script.js"></script>
 </body>
