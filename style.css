@@ -1,170 +1,272 @@
+/* 全体的なスタイル */
 body {
-    font-family: sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start; /* 上寄せに変更 */
-    min-height: 100vh;
+    font-family: Arial, sans-serif;
     margin: 0;
-    background-color: #f0f0f0;
-    padding-top: 20px; /* コンテンツ上部に余白を追加 */
-}
-
-#game-container {
-    background-color: white;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 90%;
-    max-width: 800px; /* 最大幅を設定 */
+    padding: 10px;
+    background-color: #f4f4f4;
+    color: #333;
+    line-height: 1.6;
 }
 
 header {
+    background: #333;
+    color: #fff;
+    padding: 1rem 0;
     text-align: center;
     margin-bottom: 20px;
 }
 
-#room-management, #game-area {
-    margin-bottom: 20px;
+header h1 {
+    margin: 0;
+}
+
+/* 主要コンテナの共通スタイル */
+#room-management,
+#game-info,
+#game-board,
+#dice-area,
+#action-area,
+#player-list-area {
+    background: #fff;
     padding: 15px;
+    margin-bottom: 15px;
     border: 1px solid #ddd;
-    border-radius: 4px;
+    border-radius: 5px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.1);
 }
 
-#room-management h2, #game-area h3, #game-area h4 {
+#room-management h2, #room-management h3,
+#game-info h2,
+#dice-area h3,
+#action-area h3,
+#player-list-area h3 {
     margin-top: 0;
+    color: #333;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
 }
 
+/* 部屋管理セクション */
 #room-management div {
-    margin-bottom: 10px;
+    margin-bottom: 15px;
 }
-
-#room-management label {
-    display: inline-block;
-    width: 100px;
-}
-
 #room-management input[type="text"] {
-    padding: 5px;
+    padding: 8px;
     border: 1px solid #ccc;
     border-radius: 3px;
+    margin-right: 10px;
+    width: calc(50% - 12px); /* ボタンと並べる場合など */
 }
-
-#room-management button, #dice-area button, #controls button {
+#room-management button {
     padding: 8px 15px;
-    background-color: #007bff;
-    color: white;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    margin-left: 5px;
+}
+#room-id-display {
+    font-weight: bold;
+    color: #007bff;
 }
 
-#room-management button:disabled,
-#dice-area button:disabled,
-#controls button:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
+/* ゲーム情報セクション */
+#current-player-display, #message-display {
+    font-size: 1.1em;
+    margin-bottom: 10px;
+}
+#message-display {
+    color: #e8491d; /* エラーや重要メッセージ用 */
 }
 
+/* ゲームボードのスタイル */
 #game-board {
     display: flex;
     justify-content: space-around;
-    align-items: flex-end; /* マスを下から積み上げるように */
-    height: 350px; /* ゲームボードの高さ */
-    border: 1px solid #ccc;
+    align-items: flex-end; /* 列を下揃え */
+    min-height: 400px;
     padding: 10px;
-    margin-bottom: 20px;
-    overflow-x: auto; /* 横スクロールを許可 */
+    background-color: #e9e9e9;
+    overflow-x: auto;
 }
 
-.track {
+.track { /* HTMLでは .column ではなく .track を使用 */
     display: flex;
-    flex-direction: column-reverse; /* マスを下から上に配置 */
+    flex-direction: column-reverse; /* マスを下から上に積み上げる */
     align-items: center;
-    margin: 0 5px; /* トラック間の余백 */
-    position: relative; /* Can't Stop スペースの位置調整用 */
+    margin: 0 3px; /* トラック間の余白を少し狭く */
+    padding: 5px;
+    background-color: #f8f8f8;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    min-width: 40px; /* トラックの最小幅 */
 }
 
 .track-label {
     font-weight: bold;
-    margin-bottom: 5px; /* マスとの間隔 */
+    font-size: 1.2em;
+    margin-bottom: 8px;
+    color: #333;
 }
 
 .cell {
-    width: 30px;
-    height: 20px; /* マスの高さを調整 */
+    width: 35px; /* マスの幅 */
+    height: 25px; /* マスの高さ */
     border: 1px solid #aaa;
-    margin-bottom: 2px; /* マス間の余白 */
+    margin-bottom: 3px; /* マス間の余白 */
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 10px;
+    font-size: 0.7em;
     background-color: #fff;
-    position: relative; /* マーカー表示のため */
+    position: relative; /* マーカー配置のため */
 }
 
-.cant-stop-space {
-    width: 30px;
-    height: 20px;
-    border: 1px dashed #aaa;
-    margin-bottom: 2px;
+.cell.cant-stop-space { /* HTMLの .cant-stop-space に合わせる */
+    background-color: #fffacd; /* レモンシフォン */
+    font-style: italic;
+    border-style: dashed;
+}
+
+.cell.goal-line {
+    background-color: #ffd700; /* ゴールド */
+    border-top: 2px solid #b8860b; /* ダークゴールデンロッド */
+}
+
+/* マーカーのスタイル */
+.marker-container { /* マス内のマーカーを重ねるためのコンテナ */
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 10px;
-    color: #777;
-    background-color: #f9f9f9;
+    width: 100%;
+    height: 100%;
+    position: relative;
 }
 
-.goal-line {
-    border-top: 2px solid gold !important; /* ゴールラインを強調 */
-}
-
-#dice-results {
-    display: flex;
-    gap: 10px; /* ダイス間の余白 */
-    margin-bottom: 10px;
-    min-height: 40px; /* 表示エリアの最低限の高さを確保 */
-}
-
-.dice {
-    width: 30px;
-    height: 30px;
-    border: 1px solid #000;
+.temp-marker, .claim-marker {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%; /* 円形 */
+    position: absolute; /* マス内で重ねるために絶対配置 */
+    box-shadow: 0 0 3px rgba(0,0,0,0.5);
     display: flex;
     justify-content: center;
     align-items: center;
+    font-size: 0.6em;
+    color: white;
     font-weight: bold;
 }
 
-#dice-combinations label {
-    display: block; /* 各組み合わせを改行して表示 */
-    margin-bottom: 5px;
-}
-
-/* プレイヤーマーカーのスタイル（仮） */
-.marker {
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    position: absolute; /* セルの中央に配置するため */
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+.temp-marker {
     opacity: 0.7;
+    border: 1px dashed #000;
 }
-.temp-marker { /*一時マーカーは少し小さく、透過させる */
-    width: 12px;
-    height: 12px;
-    opacity: 0.6;
-    border: 1px solid black;
+.temp-marker.player0 { background-color: rgba(255, 0, 0, 0.7); } /* 赤 */
+.temp-marker.player1 { background-color: rgba(0, 0, 255, 0.7); } /* 青 */
+.temp-marker.player2 { background-color: rgba(0, 128, 0, 0.7); } /* 緑 */
+.temp-marker.player3 { background-color: rgba(255, 255, 0, 0.7); color: #333; border: 1px dashed #666;} /* 黄 */
+
+.claim-marker {
+    width: 20px; /* 占領マーカーは少し大きく */
+    height: 20px;
+    border: 2px solid #fff;
+    opacity: 0.9;
+}
+.claim-marker.player0 { background-color: rgb(200, 0, 0); } /* 濃い赤 */
+.claim-marker.player1 { background-color: rgb(0, 0, 200); } /* 濃い青 */
+.claim-marker.player2 { background-color: rgb(0, 100, 0); } /* 濃い緑 */
+.claim-marker.player3 { background-color: rgb(204, 204, 0); color: #333;} /* 濃い黄 */
+
+
+/* ダイスセクション */
+#dice-result-display {
+    display: inline-block; /* 横並びのため */
+    min-width: 100px;
+    padding: 5px;
+    border: 1px solid #eee;
+    background: #f9f9f9;
+    margin-right: 10px;
+    text-align: center;
+    font-weight: bold;
+}
+#dice-result-display .dice-value { /* script.js でダイス目をspan.dice-valueで囲むことを想定 */
+    display: inline-block;
+    width: 25px;
+    height: 25px;
+    line-height: 25px;
+    border: 1px solid #333;
+    margin: 0 2px;
+    background-color: white;
+    border-radius: 3px;
 }
 
-.player-1 { background-color: red; }
-.player-2 { background-color: blue; }
-.player-3 { background-color: green; }
-.player-4 { background-color: yellow; }
 
-#player-info div {
-    margin-bottom: 5px;
+/* アクションセクション */
+#dice-combination-choice-area label {
+    display: block;
+    margin-bottom: 8px;
+    padding: 5px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+}
+#dice-combination-choice-area label:hover {
+    background-color: #f0f8ff; /* アリスブルー */
+    border-color: #add8e6; /* ライトブルー */
+}
+#dice-combination-choice-area input[type="radio"] {
+    margin-right: 5px;
+}
+
+/* プレイヤーリスト */
+#player-list {
+    list-style: none;
+    padding: 0;
+}
+#player-list li {
+    padding: 5px 0;
+    border-bottom: 1px dotted #eee;
+}
+#player-list li:last-child {
+    border-bottom: none;
+}
+/* プレイヤーごとの色をリストにも反映させる場合 (例) */
+#player-list .player-color-0 { color: rgb(200, 0, 0); font-weight: bold; }
+#player-list .player-color-1 { color: rgb(0, 0, 200); font-weight: bold; }
+#player-list .player-color-2 { color: rgb(0, 100, 0); font-weight: bold; }
+#player-list .player-color-3 { color: rgb(204, 204, 0); font-weight: bold; }
+
+
+/* ボタンの共通スタイル */
+button {
+    padding: 10px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background-color 0.3s ease;
+}
+button:hover:not(:disabled) {
+    background-color: #0056b3;
+}
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+/* 特定のボタンの調整 */
+#start-game-btn {
+    background-color: #28a745; /* 緑 */
+}
+#start-game-btn:hover:not(:disabled) {
+    background-color: #1e7e34;
+}
+#stop-btn {
+    background-color: #dc3545; /* 赤 */
+}
+#stop-btn:hover:not(:disabled) {
+    background-color: #c82333;
+}
+
+/* ユーティリティ */
+.hidden {
+    display: none !important;
 }
