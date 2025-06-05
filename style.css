@@ -252,6 +252,29 @@ header h1 {
 .claim-marker.player2 { background-color: #1b4332; box-shadow: 0 0 8px #40916c; }
 .claim-marker.player3 { background-color: #e85d04; color: #fff; box-shadow: 0 0 8px #ffba08; }
 
+.progress-marker {
+    width: 16px;
+    height: 16px;
+    border-radius: 30%; /* Slightly squared circle */
+    position: absolute;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 0.6em;
+    color: white;
+    font-weight: bold;
+    opacity: 0.6;
+    border: 1px solid rgba(0,0,0,0.2);
+    /* z-index: 5; */ /* Lower than temp-marker if they can overlap on same cell before stop */
+}
+
+/* Player-specific colors for progress markers */
+.progress-marker.player0 { background-color: rgba(217, 4, 41, 0.6); }
+.progress-marker.player1 { background-color: rgba(0, 119, 182, 0.6); }
+.progress-marker.player2 { background-color: rgba(45, 106, 79, 0.6); }
+.progress-marker.player3 { background-color: rgba(252, 163, 17, 0.6); color: #212529; }
+
 
 /* -------------------------
    Dice Area Styles

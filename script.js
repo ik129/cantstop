@@ -163,6 +163,7 @@ async function createRoom() {
         color: PLAYER_COLORS[0],
         joinOrder: 1,
         isHost: true,
+        progressMarkers: {} // 永続マーカーの初期状態
     };
 
     const roomData = {
@@ -255,6 +256,7 @@ async function joinRoom() {
             color: PLAYER_COLORS[numPlayers % PLAYER_COLORS.length],
             joinOrder: numPlayers + 1,
             isHost: false,
+            progressMarkers: {} // 永続マーカーの初期状態
         };
 
         await roomRef.update({
@@ -638,35 +640,59 @@ async function selectDiceCombination() {
         let canAdvanceAnyMarker = false;
         let isBust = false;
 
-        // 指定されたトラック(合計値)にマーカーを配置/進行可能かチェックする内部関数
-        function canPlaceOrAdvanceOnTrack(trackSum) {
+        // 作業用の一時マーカーオブジェクト。これを変更していく。
+        let tempWorkMarkers = JSON.parse(JSON.stringify(roomData.turnTemporaryMarkers || {}));
+        const claimedCols = roomData.claimedColumns || {};
+        let progressedThisPair = false; // このダイスペアで少なくとも1マス進めたか
+        let isBust = false;
+
+        // 内部ヘルパー関数: 特定のトラックに進行/配置可能かチェックし、可能なら作業用マーカーを更新
+        function attemptToAdvanceOnTrack(trackSum, currentTempMarkersState) {
+            const trackSumStr = String(trackSum);
             if (trackSum < 2 || trackSum > 12) return false;
-            if (claimedCols[trackSum] && claimedCols[trackSum] !== localPlayerId) return false;
-            if (claimedCols[trackSum] && claimedCols[trackSum] === localPlayerId) return false;
 
-            const currentMarkerPosition = currentTurnTempMarkers[String(trackSum)]; // Ensure string key
-            if (currentMarkerPosition && currentMarkerPosition >= TRACK_CONFIG[String(trackSum)]) return false;
+            // 1. 列の占領状態チェック
+            if (claimedCols[trackSumStr] && claimedCols[trackSumStr] !== localPlayerId) return false; // 他人に占領されている
+            if (claimedCols[trackSumStr] && claimedCols[trackSumStr] === localPlayerId) return false; // 自分が既に占領している
 
-            const tempMarkerCount = Object.keys(currentTurnTempMarkers).length;
-            if (!currentMarkerPosition && tempMarkerCount >= 3) return false;
-            return true;
-        }
+            // 2. ゴール状態チェック
+            const currentTempPosOnTrack = currentTempMarkersState[trackSumStr];
+            const playerProgressOnTrack = roomData.players[localPlayerId]?.progressMarkers?.[trackSumStr] || 0;
 
-        const uniqueChosenSumsToAttempt = chosenSums[0] === chosenSums[1] ? [chosenSums[0]] : chosenSums;
-
-        for (const sum of uniqueChosenSumsToAttempt) {
-            const sumStr = String(sum); // Use string for object keys
-            if (canPlaceOrAdvanceOnTrack(sum)) {
-                if (currentTurnTempMarkers[sumStr]) {
-                    currentTurnTempMarkers[sumStr]++;
-                } else {
-                    currentTurnTempMarkers[sumStr] = 1;
-                }
-                canAdvanceAnyMarker = true;
+            let basePosition = playerProgressOnTrack; // 確定マーカー位置を基準
+            if (currentTempPosOnTrack) { // 一時マーカーが既にあれば、そちらを基準
+                basePosition = currentTempPosOnTrack;
             }
+
+            if (basePosition >= TRACK_CONFIG[trackSumStr]) return false; // 既にゴールしているか、超えている
+
+            // 3. 3マーカー制限チェック
+            const numTempMarkersCurrently = Object.keys(currentTempMarkersState).length;
+            if (!currentTempMarkersState[trackSumStr] && numTempMarkersCurrently >= 3) {
+                 // 新規に置こうとしていて、既に3つ使用中なら不可
+                return false;
+            }
+
+            // 進行/配置処理
+            if (currentTempMarkersState[trackSumStr]) {
+                currentTempMarkersState[trackSumStr]++; // 既存の一時マーカーを進める
+            } else {
+                currentTempMarkersState[trackSumStr] = (playerProgressOnTrack > 0 ? playerProgressOnTrack : 0) + 1; // 新規配置
+            }
+            return true; // 進行/配置成功
         }
 
-        if (!canAdvanceAnyMarker) {
+        // 選択されたペアの合計値で処理
+        // chosenSums は [sumA, sumB]
+        if (attemptToAdvanceOnTrack(chosenSums[0], tempWorkMarkers)) {
+            progressedThisPair = true;
+        }
+        // 2つ目の合計値も、1つ目の処理後の盤面 (tempWorkMarkers) に対して処理
+        if (attemptToAdvanceOnTrack(chosenSums[1], tempWorkMarkers)) {
+            progressedThisPair = true;
+        }
+
+        if (!progressedThisPair) {
             isBust = true;
             console.log(`Player ${localPlayerId} busted. No valid moves for chosen sums: ${chosenSums.join(',')}`);
         }
@@ -684,8 +710,7 @@ async function selectDiceCombination() {
         }
 
         await roomRef.update(updatesForFirestore);
-        // メッセージ表示はonSnapshotに任せる
-        console.log("Dice combination processed and marker positions updated. Firestore updates:", updatesForFirestore);
+        console.log("Dice combination processed. Firestore updates:", updatesForFirestore);
 
     } catch (error) {
         console.error("Error in selectDiceCombination (advancing markers): ", error);
@@ -695,18 +720,21 @@ async function selectDiceCombination() {
 
 
 /**
- * ボード上のマーカー表示を全体的に更新します。一時マーカーと占領マーカーの両方を描画します。
+ * ボード上のマーカー表示を全体的に更新します。
+ * 永続的な進捗マーカー、占領マーカー、現在アクティブなプレイヤーの一時マーカーを描画します。
  * @param {object|null} roomData - Firestoreから取得した現在の部屋データ。nullの場合はマーカーをクリア。
  */
 function updateBoardMarkers(roomData) {
     if (!gameBoardDiv) { console.error("gameBoardDiv not found in updateBoardMarkers"); return; }
-    gameBoardDiv.querySelectorAll('.temp-marker, .claim-marker').forEach(m => m.remove());
+    // 全ての種類のマーカーをクリア
+    gameBoardDiv.querySelectorAll('.progress-marker, .claim-marker, .temp-marker').forEach(m => m.remove());
 
     if (!roomData) {
         return;
     }
 
     const getPlayerColorClass = (pId) => {
+        // roomData.players が存在し、その中に pId が存在するか確認
         if (roomData.players && roomData.players[pId]) {
             const player = roomData.players[pId];
             if (player.color) {
@@ -714,50 +742,96 @@ function updateBoardMarkers(roomData) {
                 return colorIndex !== -1 ? `player${colorIndex}` : 'player-default';
             }
         }
+        // グローバルな players 配列もフォールバックとして参照 (ただし最新でない可能性に注意)
         const playerFromArray = players.find(p => p.id === pId);
          if (playerFromArray && playerFromArray.color) {
             const colorIndex = PLAYER_COLORS.indexOf(playerFromArray.color);
             return colorIndex !== -1 ? `player${colorIndex}` : 'player-default';
         }
-        return 'player-default';
+        return 'player-default'; // 最終フォールバック
     };
 
-    // 現在のターンプレイヤーの一時マーカーを描画
-    if (roomData.activePlayerId && roomData.turnTemporaryMarkers) {
-        const activePlayerColorClass = getPlayerColorClass(roomData.activePlayerId);
-        for (const trackNumStr in roomData.turnTemporaryMarkers) {
-            const position = roomData.turnTemporaryMarkers[trackNumStr];
-            const trackSelector = `.track[data-track-number="${trackNumStr}"]`;
-            const cellSelector = `${trackSelector} .cell[data-cell-position="${position}"]`;
-            const cellToPlaceOn = gameBoardDiv.querySelector(cellSelector);
+    // 1. 各プレイヤーの永続化された進捗マーカー (progressMarkers) を描画
+    if (roomData.players) {
+        for (const pId in roomData.players) {
+            if (roomData.players.hasOwnProperty(pId)) {
+                const player = roomData.players[pId];
+                if (player.progressMarkers) {
+                    const playerColorClass = getPlayerColorClass(player.id);
+                    for (const trackNumStr in player.progressMarkers) {
+                        if (player.progressMarkers.hasOwnProperty(trackNumStr)) {
+                            // この列がまだ誰も占領していない場合のみ描画
+                            if (roomData.claimedColumns && roomData.claimedColumns[trackNumStr]) continue;
 
-            if (cellToPlaceOn) {
-                const markerDiv = document.createElement('div');
-                markerDiv.classList.add('temp-marker', activePlayerColorClass);
-                const markerContainer = cellToPlaceOn.querySelector('.marker-container');
-                if (markerContainer) markerContainer.appendChild(markerDiv);
-                else console.warn("Marker container not found in cell:", cellToPlaceOn);
+                            const position = player.progressMarkers[trackNumStr];
+                            const trackGoal = TRACK_CONFIG[trackNumStr];
+
+                            // ゴールに到達しているマーカーは claimedMarker として描画されるので、ここでは描画しない
+                            if (position > 0 && position < trackGoal) {
+                                const cellSelector = `.track[data-track-number="${trackNumStr}"] .cell[data-cell-position="${position}"] .marker-container`;
+                                const markerContainer = gameBoardDiv.querySelector(cellSelector);
+                                if (markerContainer) {
+                                    const markerDiv = document.createElement('div');
+                                    markerDiv.classList.add('progress-marker', playerColorClass);
+                                    markerDiv.dataset.playerId = pId;
+                                    markerContainer.appendChild(markerDiv);
+                                } else {
+                                    // console.warn(`Marker container not found for progress marker: Player ${pId}, Track ${trackNumStr}, Pos ${position}`);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
-    // 全プレイヤーの占領マーカーを描画
+    // 2. 全プレイヤーの占領マーカーを描画 (claimedColumns に基づいて)
     if (roomData.claimedColumns) {
         for (const trackNumStr in roomData.claimedColumns) {
-            const pId = roomData.claimedColumns[trackNumStr];
-            const claimedPlayerColorClass = getPlayerColorClass(pId);
-            const goalPosition = TRACK_CONFIG[trackNumStr];
+            if (roomData.claimedColumns.hasOwnProperty(trackNumStr)) {
+                const pId = roomData.claimedColumns[trackNumStr];
+                const claimedPlayerColorClass = getPlayerColorClass(pId);
+                const goalPosition = TRACK_CONFIG[trackNumStr];
 
-            const trackSelector = `.track[data-track-number="${trackNumStr}"]`;
-            const cellSelector = `${trackSelector} .cell[data-cell-position="${goalPosition}"]`;
-            const goalCell = gameBoardDiv.querySelector(cellSelector);
+                const trackSelector = `.track[data-track-number="${trackNumStr}"]`;
+                const cellSelector = `${trackSelector} .cell[data-cell-position="${goalPosition}"] .marker-container`;
+                const markerContainer = gameBoardDiv.querySelector(cellSelector);
 
-            if (goalCell) {
-                const claimMarkerDiv = document.createElement('div');
-                claimMarkerDiv.classList.add('claim-marker', claimedPlayerColorClass);
-                const markerContainer = goalCell.querySelector('.marker-container');
-                if (markerContainer) markerContainer.appendChild(claimMarkerDiv);
-                else console.warn("Marker container not found in goal cell:", goalCell);
+                if (markerContainer) {
+                    const claimMarkerDiv = document.createElement('div');
+                    claimMarkerDiv.classList.add('claim-marker', claimedPlayerColorClass);
+                    claimMarkerDiv.dataset.playerId = pId;
+                    markerContainer.appendChild(claimMarkerDiv);
+                } else {
+                    // console.warn(`Marker container not found in goal cell for claimed marker: Track ${trackNumStr}`);
+                }
+            }
+        }
+    }
+
+    // 3. 現在のターンプレイヤーの一時マーカーを描画 (最前面に来るように最後に描画)
+    if (roomData.activePlayerId && roomData.turnTemporaryMarkers) {
+        const activePlayerColorClass = getPlayerColorClass(roomData.activePlayerId);
+        for (const trackNumStr in roomData.turnTemporaryMarkers) {
+            if (roomData.turnTemporaryMarkers.hasOwnProperty(trackNumStr)) {
+                const position = roomData.turnTemporaryMarkers[trackNumStr];
+                // 一時マーカーは占領列にも置ける（ただしstopしても自分のものにはならない）
+                // ゴールを超えていなければ描画
+                if (position > 0 && position <= TRACK_CONFIG[trackNumStr]) {
+                    const trackSelector = `.track[data-track-number="${trackNumStr}"]`;
+                    const cellSelector = `${trackSelector} .cell[data-cell-position="${position}"] .marker-container`;
+                    const markerContainer = gameBoardDiv.querySelector(cellSelector);
+
+                    if (markerContainer) {
+                        const markerDiv = document.createElement('div');
+                        markerDiv.classList.add('temp-marker', activePlayerColorClass);
+                        markerDiv.dataset.playerId = roomData.activePlayerId;
+                        markerContainer.appendChild(markerDiv);
+                    } else {
+                        // console.warn(`Marker container not found for temp marker: Track ${trackNumStr}, Pos ${position}`);
+                    }
+                }
             }
         }
     }
@@ -766,6 +840,7 @@ function updateBoardMarkers(roomData) {
 /**
  * 「ストップ」アクションを処理します。
  * 現在の一時マーカーを確定し、必要なら列を占領します。
+ * プレイヤーの永続的な進捗 (progressMarkers) も更新します。
  * 勝利条件をチェックし、ゲームを終了するか次のプレイヤーにターンを移します。
  */
 async function stopTurn() {
@@ -800,11 +875,28 @@ async function stopTurn() {
             setDisplayMessage("ダイスの組み合わせを選びマーカーを進めてください。", "info"); return;
         }
 
+        const playerObject = roomData.players[localPlayerId];
+        if (!playerObject) {
+            console.error("Player object not found for localPlayerId:", localPlayerId, "in roomData players:", roomData.players);
+            setDisplayMessage("プレイヤーデータが見つかりません。エラーが発生しました。", "error");
+            return;
+        }
+        let currentPlayerExistingProgress = playerObject.progressMarkers || {};
+        let newPlayerProgressMarkers = JSON.parse(JSON.stringify(currentPlayerExistingProgress));
+
+        if (roomData.turnTemporaryMarkers && typeof roomData.turnTemporaryMarkers === 'object') {
+            for (const trackStr in roomData.turnTemporaryMarkers) {
+                if (roomData.turnTemporaryMarkers.hasOwnProperty(trackStr)) {
+                    const currentTempPosition = roomData.turnTemporaryMarkers[trackStr];
+                    newPlayerProgressMarkers[trackStr] = currentTempPosition;
+                }
+            }
+        }
 
         let updatedClaimedColumns = { ...(roomData.claimedColumns || {}) };
-
-        for (const colStr in roomData.turnTemporaryMarkers) {
-            const position = roomData.turnTemporaryMarkers[colStr];
+        // 占領列の処理 - newPlayerProgressMarkers (確定後の位置) を参照して占領を決定
+        for (const colStr in newPlayerProgressMarkers) {
+            const position = newPlayerProgressMarkers[colStr];
             const trackGoal = TRACK_CONFIG[colStr];
             if (position >= trackGoal && !updatedClaimedColumns[colStr]) {
                 updatedClaimedColumns[colStr] = localPlayerId;
@@ -812,14 +904,11 @@ async function stopTurn() {
         }
 
         let playerOccupiedCount = 0;
-        if(roomData.players && roomData.players[localPlayerId]) {
-             for (const col in updatedClaimedColumns) {
-                if (updatedClaimedColumns[col] === localPlayerId) {
-                    playerOccupiedCount++;
-                }
+        // updatedClaimedColumns を基に現在のプレイヤーの総占領列数を再計算
+        for (const col in updatedClaimedColumns) {
+            if (updatedClaimedColumns[col] === localPlayerId) {
+                playerOccupiedCount++;
             }
-        } else {
-            console.warn("Player data not found for occupied count calculation during stopTurn.");
         }
 
         const updates = {
@@ -828,6 +917,7 @@ async function stopTurn() {
             turnDiceRoll: [],
             turnChosenSums: [],
             turnBusted: false,
+            [`players.${localPlayerId}.progressMarkers`]: newPlayerProgressMarkers,
             activePlayerId: getNextPlayerId(roomData),
         };
 
@@ -838,7 +928,7 @@ async function stopTurn() {
         }
 
         await roomRef.update(updates);
-        console.log("Turn stopped. Firestore updated. Next player:", updates.activePlayerId);
+        console.log("Turn stopped. Firestore updated with progressMarkers. Next player:", updates.activePlayerId);
         // メッセージ表示はonSnapshotが行う
 
     } catch (error) {
@@ -1042,26 +1132,37 @@ function listenToRoomUpdates(roomId) {
                     const tempMarkersExist = Object.keys(roomData.turnTemporaryMarkers || {}).length > 0;
 
                     if (rollDiceButton) {
-                        const canMakeFirstRoll = isMyTurn && !isBusted && !diceRolled;
-                        const canContinue = isMyTurn && !isBusted && diceRolled && combinationChosen && tempMarkersExist;
-                        rollDiceButton.disabled = !(canMakeFirstRoll || canContinue);
-                        rollDiceButton.textContent = (diceRolled && combinationChosen && tempMarkersExist && !isBusted) ? '続ける' : 'ダイスを振る';
+                        const canMakeFirstRoll = isMyTurn && roomData.status === 'playing' && !isBusted && !diceRolled;
+                        const canContinue = isMyTurn && roomData.status === 'playing' && !isBusted && diceRolled && combinationChosen && tempMarkersExist;
+
+                        if (canMakeFirstRoll) {
+                            rollDiceButton.disabled = false;
+                            rollDiceButton.textContent = 'ダイスを振る';
+                        } else if (canContinue) {
+                            rollDiceButton.disabled = false;
+                            rollDiceButton.textContent = '続ける';
+                        } else {
+                            rollDiceButton.disabled = true;
+                            if (!isMyTurn) rollDiceButton.textContent = 'ダイスを振る';
+                        }
                     }
 
                     if (stopButton) {
-                        stopButton.disabled = !(isMyTurn && !isBusted && diceRolled && tempMarkersExist);
+                        stopButton.disabled = !(isMyTurn && roomData.status === 'playing' && !isBusted && diceRolled && tempMarkersExist);
                     }
 
                     if (diceCombinationChoiceArea) {
-                        if (isMyTurn && diceRolled && !isBusted && !combinationChosen) {
+                        const showCombinations = isMyTurn && roomData.status === 'playing' && diceRolled && !isBusted && !combinationChosen;
+                        if (showCombinations) {
                             diceCombinationChoiceArea.innerHTML = '';
                             generateDiceCombinations(roomData.turnDiceRoll);
                             diceCombinationChoiceArea.classList.remove('hidden');
-                        } else if (isMyTurn && diceRolled && !isBusted && combinationChosen) {
-                            diceCombinationChoiceArea.querySelectorAll('input, button').forEach(el => el.disabled = true);
-                            diceCombinationChoiceArea.classList.remove('hidden');
                         } else {
                             diceCombinationChoiceArea.classList.add('hidden');
+                            if (isMyTurn && roomData.status === 'playing' && diceRolled && !isBusted && combinationChosen) {
+                                diceCombinationChoiceArea.querySelectorAll('input, button').forEach(el => el.disabled = true);
+                                diceCombinationChoiceArea.classList.remove('hidden');
+                            }
                         }
                     }
                 } else if (roomData.status === 'waiting') {
@@ -1121,8 +1222,6 @@ function updateMessageDisplay(roomData) {
     if (roomData.status === 'finished') {
         const winner = roomData.players[roomData.winnerId];
         if (winner) {
-            // innerHTML を使用する場合は、内容が信頼できるソースからであることを確認。
-            // ここではプレイヤー名なので、XSSのリスクは低いが注意。
             messageDisplay.innerHTML = `ゲーム終了！ <strong style="color:${winner.color || PLAYER_COLORS[PLAYER_COLORS.indexOf(winner.color)] || '#000'};">${winner.name}</strong> さんの勝利です！ 🎉`;
             setDisplayMessage(messageDisplay.textContent, 'success');
         } else {
@@ -1132,7 +1231,6 @@ function updateMessageDisplay(roomData) {
     }
 
     if (roomData.turnBusted) {
-        // previousActivePlayerId は listenToRoomUpdates の onSnapshot の先頭で更新前の activePlayerId を参照して設定
         const bustedPlayer = roomData.players[previousActivePlayerId];
          if (bustedPlayer && previousActivePlayerId === localPlayerId) {
             setDisplayMessage("バスト！あなたのターンは終了しました。", "error");
@@ -1164,7 +1262,6 @@ function updateMessageDisplay(roomData) {
     } else {
         setDisplayMessage('ゲームの準備ができました。', 'info');
     }
-    // previousActivePlayerId の更新は listenToRoomUpdates の onSnapshot のコールバック関数の **最初** で行う。
-    // ここで previousActivePlayerId = roomData.activePlayerId とすると、
-    // バストメッセージ表示時に「現在のターンプレイヤー (つまり次の人)」を参照してしまうため。
 }
+
+[end of script.js]
