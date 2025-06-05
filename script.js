@@ -10,6 +10,8 @@
  * - ゲームボードの動的な描画
  * - 部屋の作成、参加、ゲーム開始といった部屋管理機能
  * - ダイスロール、組み合わせ選択、マーカー進行、ストップ、バストといったコアゲームロジック
+ *   - 「ストップ」時には、そのターンの進行が「確定マーカー」として保存され、次回以降の進行の基点となる。
+ *   - マーカーが重なる場合は、視認性向上のため表示位置をずらす。
  * - Firestoreとのリアルタイムデータ同期とUI更新
  * - プレイヤーへのメッセージ表示（情報、エラー、成功など）
  * - UI表示状態の制御（部屋管理画面、ゲーム画面など）
@@ -31,73 +33,57 @@ if (typeof firebase !== 'undefined' && typeof firebaseConfig !== 'undefined') {
 }
 
 // --- DOM Element References ---
-// Room Management Elements
 const roomManagementDiv = document.getElementById('room-management');
-const hostNameInput = document.getElementById('host-name');         // 部屋作成時のホスト名入力フィールド
-const createRoomButton = document.getElementById('create-room-btn');    // 部屋作成ボタン
-const roomIdDisplay = document.getElementById('room-id-display');       // 作成/参加した部屋IDの表示エリア
-const clientNameInput = document.getElementById('client-name');       // 部屋参加時のクライアント名入力フィールド
-const roomIdInput = document.getElementById('room-id-input');         // 参加する部屋IDの入力フィールド
-const joinRoomButton = document.getElementById('join-room-btn');      // 部屋参加ボタン
-
-// Game Information Elements
-const gameInfoDiv = document.getElementById('game-info');             // ゲーム情報セクションのコンテナ
-const currentPlayerDisplay = document.getElementById('current-player-display'); // 現在のターンプレイヤー名表示エリア
-const messageDisplay = document.getElementById('message-display');       // ゲームメッセージ表示エリア
-const startGameButton = document.getElementById('start-game-btn');      // ゲーム開始ボタン
-
-// Player List Area
-const playerListAreaDiv = document.getElementById('player-list-area');  // 参加者リストセクションのコンテナ
-const playerListUl = document.getElementById('player-list');            // 参加者リスト(ul要素)
-
-// Game Play Area Elements
-const gamePlayAreaDiv = document.getElementById('game-play-area');    // ゲーム盤・ダイス・アクションエリアの親コンテナ
-const gameBoardDiv = document.getElementById('game-board');           // ゲームボード本体描画エリア
-
-// Dice Area Elements
-const diceAreaDiv = document.getElementById('dice-area');             // ダイス関連UIのコンテナ
-const diceResultDisplay = document.getElementById('dice-result-display'); // ダイスロール結果表示エリア
-const rollDiceButton = document.getElementById('roll-dice-btn');        // ダイスを振る/続けるボタン
-
-// Action Area Elements
-const actionAreaDiv = document.getElementById('action-area');           // アクション関連UIのコンテナ
-const diceCombinationChoiceArea = document.getElementById('dice-combination-choice-area'); // ダイス組み合わせ選択肢表示エリア
-const stopButton = document.getElementById('stop-btn');                 // ストップボタン
-
+const hostNameInput = document.getElementById('host-name');
+const createRoomButton = document.getElementById('create-room-btn');
+const roomIdDisplay = document.getElementById('room-id-display');
+const clientNameInput = document.getElementById('client-name');
+const roomIdInput = document.getElementById('room-id-input');
+const joinRoomButton = document.getElementById('join-room-btn');
+const gameInfoDiv = document.getElementById('game-info');
+const currentPlayerDisplay = document.getElementById('current-player-display');
+const messageDisplay = document.getElementById('message-display');
+const startGameButton = document.getElementById('start-game-btn');
+const playerListAreaDiv = document.getElementById('player-list-area');
+const playerListUl = document.getElementById('player-list');
+const gamePlayAreaDiv = document.getElementById('game-play-area');
+const gameBoardDiv = document.getElementById('game-board');
+const diceAreaDiv = document.getElementById('dice-area');
+const diceResultDisplay = document.getElementById('dice-result-display');
+const rollDiceButton = document.getElementById('roll-dice-btn');
+const actionAreaDiv = document.getElementById('action-area');
+const diceCombinationChoiceArea = document.getElementById('dice-combination-choice-area');
+const stopButton = document.getElementById('stop-btn');
 
 // --- Game Configuration Constants ---
-const MAX_PLAYERS = 4;          // 部屋の最大プレイヤー数
-const MIN_PLAYERS_TO_START = 2; // ゲーム開始に必要な最低プレイヤー数
-const TRACK_CONFIG = {          // 各トラックのマス数 (キー:トラック番号(文字列), 値:マス数(数値))
+const MAX_PLAYERS = 4;
+const MIN_PLAYERS_TO_START = 2;
+const TRACK_CONFIG = {
     '2': 3, '3': 5, '4': 7, '5': 9, '6': 11, '7': 13,
     '8': 11, '9': 9, '10': 7, '11': 5, '12': 3
 };
-const PLAYER_COLORS = ['red', 'blue', 'green', 'yellow']; // プレイヤーごとのデフォルトカラーパレット
+const PLAYER_COLORS = ['red', 'blue', 'green', 'yellow'];
 
-// --- Global Game State Variables (Local cache, synced with Firestore) ---
-let currentRoomId = null;       // 現在参加している部屋のID
-let localPlayerId = null;       // このクライアントのプレイヤーID (部屋参加時に生成)
-let players = [];               // 現在の部屋のプレイヤー情報オブジェクトの配列 (Firestoreから同期、参加順ソート済み)
-let activePlayerId = null;      // 現在のターンプレイヤーのID (Firestoreから同期)
-let tempMarkersOnBoard = {};    // 現在のターンプレイヤーの一時マーカー { trackNumberString: positionInt } (Firestoreから同期)
-let claimedTracks = {};         // 占領されたトラック情報 { trackNumberString: playerIdString } (Firestoreから同期)
-
-// --- UI Control / State Variables ---
-let previousActivePlayerId = null; // 直前のターンプレイヤーID (主にバストメッセージ表示で使用)
+// --- Global Game State Variables ---
+let currentRoomId = null;
+let localPlayerId = null;
+let players = [];
+let activePlayerId = null;
+let tempMarkersOnBoard = {};
+let claimedTracks = {};
+let previousActivePlayerId = null;
 
 // --- Function Definitions ---
 
 /**
- * ゲームボードのHTML構造を動的に生成し、#game-board要素内に描画します。
- * この関数は、ゲームの初期化時または必要に応じて呼び出され、
- * TRACK_CONFIGに基づいてトラック、マス、ラベル、マーカーコンテナを生成します。
+ * ゲームボードのHTML構造を動的に生成し描画します。
  */
 function drawGameBoard() {
     if (!gameBoardDiv) {
         console.error("Game board element (#game-board) not found!");
         return;
     }
-    gameBoardDiv.innerHTML = ''; // 描画前に既存のボード内容をクリア
+    gameBoardDiv.innerHTML = '';
 
     for (const trackNumber in TRACK_CONFIG) {
         if (TRACK_CONFIG.hasOwnProperty(trackNumber)) {
@@ -117,27 +103,24 @@ function drawGameBoard() {
                 cellDiv.dataset.track = trackNumber;
                 cellDiv.dataset.cellPosition = i;
 
-                if (i === 1) { // 各トラックの最初のマス
+                if (i === 1) {
                     cellDiv.classList.add('cant-stop-space');
                 }
-                if (i === numCells) { // 各トラックの最後のマス (ゴールライン)
+                if (i === numCells) {
                     cellDiv.classList.add('goal-line');
                 }
-
                 const markerContainer = document.createElement('div');
-                markerContainer.classList.add('marker-container'); // マーカーを配置するための内部コンテナ
+                markerContainer.classList.add('marker-container');
                 cellDiv.appendChild(markerContainer);
                 trackDiv.appendChild(cellDiv);
             }
             gameBoardDiv.appendChild(trackDiv);
         }
     }
-    // console.log("Game board drawn."); // 初期化確認用ログ
 }
 
 /**
- * 新しいゲーム部屋を作成し、Firestoreに初期データを保存します。
- * ホストプレイヤーとして部屋に参加し、UIをゲーム待機状態に更新後、部屋情報の監視を開始します。
+ * 新しいゲーム部屋を作成しFirestoreに保存。ホストとして参加しUI更新、監視開始。
  */
 async function createRoom() {
     clearMessageDisplay();
@@ -155,7 +138,7 @@ async function createRoom() {
 
     localPlayerId = generatePlayerId();
     currentRoomId = generateRoomId();
-    currentPlayerName = hostName; // グローバル変数にも設定 (ただし、これはローカルでのみ使用)
+    let currentPlayerName = hostName;
 
     const playerObject = {
         id: localPlayerId,
@@ -163,7 +146,7 @@ async function createRoom() {
         color: PLAYER_COLORS[0],
         joinOrder: 1,
         isHost: true,
-        progressMarkers: {} // 永続マーカーの初期状態
+        progressMarkers: {}
     };
 
     const roomData = {
@@ -199,8 +182,7 @@ async function createRoom() {
 }
 
 /**
- * 既存のゲーム部屋に参加し、Firestoreの部屋情報を更新します。
- * UIをゲーム待機状態に更新し、部屋情報のリアルタイム監視を開始します。
+ * 既存のゲーム部屋に参加しFirestore情報を更新。UI更新、監視開始。
  */
 async function joinRoom() {
     clearMessageDisplay();
@@ -249,14 +231,14 @@ async function joinRoom() {
         }
 
         localPlayerId = generatePlayerId();
-        currentPlayerName = clientName;
+        let currentPlayerName = clientName;
         const playerObject = {
             id: localPlayerId,
             name: clientName,
             color: PLAYER_COLORS[numPlayers % PLAYER_COLORS.length],
             joinOrder: numPlayers + 1,
             isHost: false,
-            progressMarkers: {} // 永続マーカーの初期状態
+            progressMarkers: {}
         };
 
         await roomRef.update({
@@ -277,9 +259,7 @@ async function joinRoom() {
 }
 
 /**
- * ゲームを開始します (ホストプレイヤーのみ実行可能)。
- * Firestoreの部屋ステータスを 'playing' に変更し、最初のターンのプレイヤーを設定します。
- * ゲーム開始に必要な各種フィールドも初期化します。
+ * ゲームを開始 (ホストのみ)。Firestore状態を 'playing' にし、初期ターンプレイヤー設定。
  */
 async function startGame() {
     clearMessageDisplay();
@@ -313,7 +293,6 @@ async function startGame() {
 
         let firstPlayerId = null;
         let minJoinOrder = Infinity;
-        // 参加順 (joinOrder) が最も小さいプレイヤーを最初のターンプレイヤーとする
         for (const pId in roomData.players) {
             if (roomData.players[pId].joinOrder < minJoinOrder) {
                 minJoinOrder = roomData.players[pId].joinOrder;
@@ -337,7 +316,6 @@ async function startGame() {
             winnerId: null,
         });
         console.log("Game started! First turn:", firstPlayerId);
-        // メッセージ更新はonSnapshotに任せる
     } catch (error) {
         console.error("Error starting game: ", error);
         setDisplayMessage("ゲーム開始エラー: " + error.message, "error");
@@ -345,9 +323,8 @@ async function startGame() {
 }
 
 /**
- * プレイヤーリストのUIを更新します。
- * プレイヤー名、色インジケータ、占領列数、自分の名前と現在のターンプレイヤーを強調表示します。
- * @param {object|null} roomData - Firestoreから取得した現在の部屋データ。nullの場合はリストをクリアしデフォルトメッセージ表示。
+ * プレイヤーリストUIを更新。名前、色、占領列数、自分の名前や現ターンプレイヤーを強調。
+ * @param {object|null} roomData - Firestoreの部屋データ。nullなら情報なし表示。
  */
 function updatePlayersList(roomData) {
     if (!playerListUl) { console.warn("playerListUl not found."); return; }
@@ -395,9 +372,8 @@ function updatePlayersList(roomData) {
 }
 
 /**
- * 現在のターンプレイヤー名をUI (`currentPlayerDisplay`) に表示します。
- * 自分のターンの場合は強調し、ゲーム終了時は勝者情報を表示します。
- * @param {object|null} roomData - Firestoreから取得した現在の部屋データ。nullの場合は表示をクリア。
+ * 現在のターンプレイヤー名をUIに表示。自分のターンなら強調、ゲーム終了時は勝者表示。
+ * @param {object|null} roomData - Firestoreの部屋データ。nullならクリア。
  */
 function updateCurrentPlayerDisplay(roomData) {
     if (!currentPlayerDisplay) { console.warn("currentPlayerDisplay not found."); return; }
@@ -439,8 +415,8 @@ function updateCurrentPlayerDisplay(roomData) {
 }
 
 /**
- * ダイスロール結果をUI (`diceResultDisplay`) に表示します。
- * @param {number[]} diceRolls - ダイスの目の配列 (例: [1, 2, 3, 4])。空配列やnullの場合はデフォルト表示。
+ * ダイスロール結果をUIに表示。
+ * @param {number[]} diceRolls - ダイスの目配列。空やnullならデフォルト表示。
  */
 function updateDiceResultDisplay(diceRolls) {
     if (!diceResultDisplay) { console.warn("diceResultDisplay not found."); return; }
@@ -458,8 +434,7 @@ function updateDiceResultDisplay(diceRolls) {
 }
 
 /**
- * ダイスを振る処理、または「続ける」場合のダイス情報リセットと再ロールを行います。
- * Firestoreの部屋データを更新し、結果を全プレイヤーに同期します。
+ * ダイスを振る/続ける処理。Firestoreの部屋データを更新し結果を同期。
  */
 async function rollDice() {
     clearMessageDisplay();
@@ -486,7 +461,6 @@ async function rollDice() {
         }
 
         const updates = {};
-        // 「続ける」条件: ダイスロール済み、組み合わせ選択済み、バストしてない、一時マーカーあり
         if (roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0 &&
             roomData.turnChosenSums && roomData.turnChosenSums.length > 0 &&
             Object.keys(roomData.turnTemporaryMarkers || {}).length > 0 &&
@@ -494,14 +468,11 @@ async function rollDice() {
             updates.turnDiceRoll = [];
             updates.turnChosenSums = [];
             updates.turnBusted = false;
-            // turnTemporaryMarkers は現在の状態を維持
              console.log("Continuing turn: Resetting dice and chosen sums for re-roll.");
         } else if (roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0) {
-             // ダイスは振ったが、まだ「続ける」条件を満たしていない（組み合わせ未選択など）
              setDisplayMessage("既にダイスは振られています。組み合わせを選択するかストップしてください。", "info");
              return;
         }
-        // それ以外（turnDiceRollが空）は最初のロールとして扱う
 
         const newDiceResults = [];
         for (let i = 0; i < 4; i++) {
@@ -513,8 +484,6 @@ async function rollDice() {
 
         await roomRef.update(updates);
         console.log("Dice rolled/reset. Firestore updates:", updates);
-        // メッセージはonSnapshotで更新される
-
     } catch (error) {
         console.error("Error in rollDice: ", error);
         setDisplayMessage("ダイス処理エラー: " + error.message, "error");
@@ -522,8 +491,7 @@ async function rollDice() {
 }
 
 /**
- * 提示されたダイスの目から、可能なペアの組み合わせを生成し、UIに表示します。
- * 各組み合わせはラジオボタンとして表示され、選択すると対応するラベルに .selected クラスが付与されます。
+ * ダイスの目から可能なペア組み合わせを生成しUIに表示。選択でラベルに .selected 付与。
  * @param {number[]} dice - 4つのダイスの目の配列。
  */
 function generateDiceCombinations(dice) {
@@ -594,13 +562,11 @@ function generateDiceCombinations(dice) {
         }
         diceCombinationChoiceArea.classList.remove('hidden');
     }
-    // console.log("Dice combinations generated and displayed:", uniqueSumPairs);
 }
 
 /**
- * プレイヤーが選択したダイスの組み合わせに基づき、一時マーカーを配置または進行させます。
- * 進行ルール（3マーカー制限、占領列不可など）を適用し、進行不可能な場合はバスト処理を行います。
- * 結果（更新された一時マーカー、バスト状態、次のターンプレイヤーなど）はFirestoreに保存されます。
+ * 選択されたダイス組み合わせに基づき一時マーカーを配置/進行。バスト処理も含む。
+ * 結果はFirestoreに保存。
  */
 async function selectDiceCombination() {
     clearMessageDisplay();
@@ -635,59 +601,43 @@ async function selectDiceCombination() {
         if (!roomData.turnDiceRoll || roomData.turnDiceRoll.length === 0) { setDisplayMessage("まだダイスが振られていません。", "info"); return; }
         if (roomData.turnChosenSums && roomData.turnChosenSums.length > 0) { setDisplayMessage("既に組み合わせは選択済みです。", "info"); return; }
 
-        let currentTurnTempMarkers = JSON.parse(JSON.stringify(roomData.turnTemporaryMarkers || {}));
-        const claimedCols = roomData.claimedColumns || {};
-        let canAdvanceAnyMarker = false;
-        let isBust = false;
-
-        // 作業用の一時マーカーオブジェクト。これを変更していく。
         let tempWorkMarkers = JSON.parse(JSON.stringify(roomData.turnTemporaryMarkers || {}));
         const claimedCols = roomData.claimedColumns || {};
-        let progressedThisPair = false; // このダイスペアで少なくとも1マス進めたか
+        let progressedThisPair = false;
         let isBust = false;
 
-        // 内部ヘルパー関数: 特定のトラックに進行/配置可能かチェックし、可能なら作業用マーカーを更新
         function attemptToAdvanceOnTrack(trackSum, currentTempMarkersState) {
             const trackSumStr = String(trackSum);
             if (trackSum < 2 || trackSum > 12) return false;
+            if (claimedCols[trackSumStr] && claimedCols[trackSumStr] !== localPlayerId) return false;
+            if (claimedCols[trackSumStr] && claimedCols[trackSumStr] === localPlayerId) return false;
 
-            // 1. 列の占領状態チェック
-            if (claimedCols[trackSumStr] && claimedCols[trackSumStr] !== localPlayerId) return false; // 他人に占領されている
-            if (claimedCols[trackSumStr] && claimedCols[trackSumStr] === localPlayerId) return false; // 自分が既に占領している
-
-            // 2. ゴール状態チェック
             const currentTempPosOnTrack = currentTempMarkersState[trackSumStr];
             const playerProgressOnTrack = roomData.players[localPlayerId]?.progressMarkers?.[trackSumStr] || 0;
 
-            let basePosition = playerProgressOnTrack; // 確定マーカー位置を基準
-            if (currentTempPosOnTrack) { // 一時マーカーが既にあれば、そちらを基準
+            let basePosition = playerProgressOnTrack;
+            if (currentTempPosOnTrack) {
                 basePosition = currentTempPosOnTrack;
             }
 
-            if (basePosition >= TRACK_CONFIG[trackSumStr]) return false; // 既にゴールしているか、超えている
+            if (basePosition >= TRACK_CONFIG[trackSumStr]) return false;
 
-            // 3. 3マーカー制限チェック
             const numTempMarkersCurrently = Object.keys(currentTempMarkersState).length;
             if (!currentTempMarkersState[trackSumStr] && numTempMarkersCurrently >= 3) {
-                 // 新規に置こうとしていて、既に3つ使用中なら不可
                 return false;
             }
 
-            // 進行/配置処理
             if (currentTempMarkersState[trackSumStr]) {
-                currentTempMarkersState[trackSumStr]++; // 既存の一時マーカーを進める
+                currentTempMarkersState[trackSumStr]++;
             } else {
-                currentTempMarkersState[trackSumStr] = (playerProgressOnTrack > 0 ? playerProgressOnTrack : 0) + 1; // 新規配置
+                currentTempMarkersState[trackSumStr] = (playerProgressOnTrack > 0 ? playerProgressOnTrack : 0) + 1;
             }
-            return true; // 進行/配置成功
+            return true;
         }
 
-        // 選択されたペアの合計値で処理
-        // chosenSums は [sumA, sumB]
         if (attemptToAdvanceOnTrack(chosenSums[0], tempWorkMarkers)) {
             progressedThisPair = true;
         }
-        // 2つ目の合計値も、1つ目の処理後の盤面 (tempWorkMarkers) に対して処理
         if (attemptToAdvanceOnTrack(chosenSums[1], tempWorkMarkers)) {
             progressedThisPair = true;
         }
@@ -699,7 +649,7 @@ async function selectDiceCombination() {
 
         const updatesForFirestore = {
             turnChosenSums: chosenSums,
-            turnTemporaryMarkers: isBust ? {} : currentTurnTempMarkers,
+            turnTemporaryMarkers: isBust ? {} : tempWorkMarkers,
             turnBusted: isBust,
         };
 
@@ -722,19 +672,16 @@ async function selectDiceCombination() {
 /**
  * ボード上のマーカー表示を全体的に更新します。
  * 永続的な進捗マーカー、占領マーカー、現在アクティブなプレイヤーの一時マーカーを描画します。
+ * マーカーの重なりを避けるため、オフセットクラスを適用します。
  * @param {object|null} roomData - Firestoreから取得した現在の部屋データ。nullの場合はマーカーをクリア。
  */
 function updateBoardMarkers(roomData) {
     if (!gameBoardDiv) { console.error("gameBoardDiv not found in updateBoardMarkers"); return; }
-    // 全ての種類のマーカーをクリア
     gameBoardDiv.querySelectorAll('.progress-marker, .claim-marker, .temp-marker').forEach(m => m.remove());
 
-    if (!roomData) {
-        return;
-    }
+    if (!roomData) { return; }
 
     const getPlayerColorClass = (pId) => {
-        // roomData.players が存在し、その中に pId が存在するか確認
         if (roomData.players && roomData.players[pId]) {
             const player = roomData.players[pId];
             if (player.color) {
@@ -742,14 +689,15 @@ function updateBoardMarkers(roomData) {
                 return colorIndex !== -1 ? `player${colorIndex}` : 'player-default';
             }
         }
-        // グローバルな players 配列もフォールバックとして参照 (ただし最新でない可能性に注意)
         const playerFromArray = players.find(p => p.id === pId);
-         if (playerFromArray && playerFromArray.color) {
+        if (playerFromArray && playerFromArray.color) {
             const colorIndex = PLAYER_COLORS.indexOf(playerFromArray.color);
             return colorIndex !== -1 ? `player${colorIndex}` : 'player-default';
         }
-        return 'player-default'; // 最終フォールバック
+        return 'player-default';
     };
+
+    // 描画順序: 1.確定マーカー -> 2.占領マーカー -> 3.一時マーカー (一時マーカーが最前面)
 
     // 1. 各プレイヤーの永続化された進捗マーカー (progressMarkers) を描画
     if (roomData.players) {
@@ -760,13 +708,11 @@ function updateBoardMarkers(roomData) {
                     const playerColorClass = getPlayerColorClass(player.id);
                     for (const trackNumStr in player.progressMarkers) {
                         if (player.progressMarkers.hasOwnProperty(trackNumStr)) {
-                            // この列がまだ誰も占領していない場合のみ描画
                             if (roomData.claimedColumns && roomData.claimedColumns[trackNumStr]) continue;
 
                             const position = player.progressMarkers[trackNumStr];
                             const trackGoal = TRACK_CONFIG[trackNumStr];
 
-                            // ゴールに到達しているマーカーは claimedMarker として描画されるので、ここでは描画しない
                             if (position > 0 && position < trackGoal) {
                                 const cellSelector = `.track[data-track-number="${trackNumStr}"] .cell[data-cell-position="${position}"] .marker-container`;
                                 const markerContainer = gameBoardDiv.querySelector(cellSelector);
@@ -774,9 +720,11 @@ function updateBoardMarkers(roomData) {
                                     const markerDiv = document.createElement('div');
                                     markerDiv.classList.add('progress-marker', playerColorClass);
                                     markerDiv.dataset.playerId = pId;
+
+                                    const existingMarkersCount = markerContainer.children.length;
+                                    markerDiv.classList.add(`marker-offset-${existingMarkersCount % 4}`);
+
                                     markerContainer.appendChild(markerDiv);
-                                } else {
-                                    // console.warn(`Marker container not found for progress marker: Player ${pId}, Track ${trackNumStr}, Pos ${position}`);
                                 }
                             }
                         }
@@ -794,17 +742,18 @@ function updateBoardMarkers(roomData) {
                 const claimedPlayerColorClass = getPlayerColorClass(pId);
                 const goalPosition = TRACK_CONFIG[trackNumStr];
 
-                const trackSelector = `.track[data-track-number="${trackNumStr}"]`;
-                const cellSelector = `${trackSelector} .cell[data-cell-position="${goalPosition}"] .marker-container`;
+                const cellSelector = `.track[data-track-number="${trackNumStr}"] .cell[data-cell-position="${goalPosition}"] .marker-container`;
                 const markerContainer = gameBoardDiv.querySelector(cellSelector);
 
                 if (markerContainer) {
                     const claimMarkerDiv = document.createElement('div');
                     claimMarkerDiv.classList.add('claim-marker', claimedPlayerColorClass);
                     claimMarkerDiv.dataset.playerId = pId;
+
+                    const existingMarkersCount = markerContainer.children.length;
+                    claimMarkerDiv.classList.add(`marker-offset-${existingMarkersCount % 4}`);
+
                     markerContainer.appendChild(claimMarkerDiv);
-                } else {
-                    // console.warn(`Marker container not found in goal cell for claimed marker: Track ${trackNumStr}`);
                 }
             }
         }
@@ -816,20 +765,19 @@ function updateBoardMarkers(roomData) {
         for (const trackNumStr in roomData.turnTemporaryMarkers) {
             if (roomData.turnTemporaryMarkers.hasOwnProperty(trackNumStr)) {
                 const position = roomData.turnTemporaryMarkers[trackNumStr];
-                // 一時マーカーは占領列にも置ける（ただしstopしても自分のものにはならない）
-                // ゴールを超えていなければ描画
                 if (position > 0 && position <= TRACK_CONFIG[trackNumStr]) {
-                    const trackSelector = `.track[data-track-number="${trackNumStr}"]`;
-                    const cellSelector = `${trackSelector} .cell[data-cell-position="${position}"] .marker-container`;
+                    const cellSelector = `.track[data-track-number="${trackNumStr}"] .cell[data-cell-position="${position}"] .marker-container`;
                     const markerContainer = gameBoardDiv.querySelector(cellSelector);
 
                     if (markerContainer) {
                         const markerDiv = document.createElement('div');
                         markerDiv.classList.add('temp-marker', activePlayerColorClass);
                         markerDiv.dataset.playerId = roomData.activePlayerId;
+
+                        const existingMarkersCount = markerContainer.children.length;
+                        markerDiv.classList.add(`marker-offset-${existingMarkersCount % 4}`);
+
                         markerContainer.appendChild(markerDiv);
-                    } else {
-                        // console.warn(`Marker container not found for temp marker: Track ${trackNumStr}, Pos ${position}`);
                     }
                 }
             }
@@ -864,12 +812,10 @@ async function stopTurn() {
         if (roomData.turnBusted) {
             setDisplayMessage("バストしています。ストップ操作は不要です。", "info"); return;
         }
-        // マーカーが一つも置かれていない、かつダイスも振っていない場合はストップできない
         if (Object.keys(roomData.turnTemporaryMarkers || {}).length === 0 &&
             (!roomData.turnDiceRoll || roomData.turnDiceRoll.length === 0)) {
             setDisplayMessage("まずダイスを振ってください。", "info"); return;
         }
-        // ダイスは振ったが、組み合わせ選択やマーカー進行が終わっていない場合もストップさせない方が自然
         if (roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0 &&
            (!(roomData.turnChosenSums && roomData.turnChosenSums.length > 0) || Object.keys(roomData.turnTemporaryMarkers || {}).length === 0) ) {
             setDisplayMessage("ダイスの組み合わせを選びマーカーを進めてください。", "info"); return;
@@ -884,17 +830,20 @@ async function stopTurn() {
         let currentPlayerExistingProgress = playerObject.progressMarkers || {};
         let newPlayerProgressMarkers = JSON.parse(JSON.stringify(currentPlayerExistingProgress));
 
+        // 一時マーカーの位置を永続的な進捗 (progressMarkers) として更新
+        // この時点での turnTemporaryMarkers は、そのターンで到達した最終位置を示している
         if (roomData.turnTemporaryMarkers && typeof roomData.turnTemporaryMarkers === 'object') {
             for (const trackStr in roomData.turnTemporaryMarkers) {
                 if (roomData.turnTemporaryMarkers.hasOwnProperty(trackStr)) {
                     const currentTempPosition = roomData.turnTemporaryMarkers[trackStr];
+                    // そのターンの進行で到達した位置を永続マーカーとして記録
                     newPlayerProgressMarkers[trackStr] = currentTempPosition;
                 }
             }
         }
 
         let updatedClaimedColumns = { ...(roomData.claimedColumns || {}) };
-        // 占領列の処理 - newPlayerProgressMarkers (確定後の位置) を参照して占領を決定
+        // 占領列の処理 - newPlayerProgressMarkers (つまり、このターンで確定した最終位置) を参照して占領を決定
         for (const colStr in newPlayerProgressMarkers) {
             const position = newPlayerProgressMarkers[colStr];
             const trackGoal = TRACK_CONFIG[colStr];
@@ -913,11 +862,11 @@ async function stopTurn() {
 
         const updates = {
             claimedColumns: updatedClaimedColumns,
-            turnTemporaryMarkers: {},
+            turnTemporaryMarkers: {}, // ストップしたので一時マーカーはクリア
             turnDiceRoll: [],
             turnChosenSums: [],
             turnBusted: false,
-            [`players.${localPlayerId}.progressMarkers`]: newPlayerProgressMarkers,
+            [`players.${localPlayerId}.progressMarkers`]: newPlayerProgressMarkers, // 更新された永続マーカーを保存
             activePlayerId: getNextPlayerId(roomData),
         };
 
@@ -929,7 +878,6 @@ async function stopTurn() {
 
         await roomRef.update(updates);
         console.log("Turn stopped. Firestore updated with progressMarkers. Next player:", updates.activePlayerId);
-        // メッセージ表示はonSnapshotが行う
 
     } catch (error) {
         console.error("Error stopping turn: ", error);
@@ -945,7 +893,6 @@ async function stopTurn() {
 function getNextPlayerId(roomData) {
     if (!roomData || !roomData.players || !roomData.activePlayerId) {
         console.warn("Cannot get next player ID: roomData, players, or activePlayerId is missing.", roomData);
-        // プレイヤーが一人しかいない、または予期せぬ状況
         const playerKeys = Object.keys(roomData.players || {});
         return playerKeys.length > 0 ? playerKeys[0] : null;
     }
@@ -959,10 +906,6 @@ function getNextPlayerId(roomData) {
     }
     return playerArray[(currentIndex + 1) % playerArray.length].id;
 }
-
-// (コメントアウト) 不要になった、または他の関数に統合されたヘルパー関数群
-// function continueTurn() { ... }  // rollDice にロジック統合
-// function handleBust() { ... } // selectDiceCombination にロジック統合
 
 
 // --- イベントリスナー設定 ---
@@ -1093,12 +1036,9 @@ function listenToRoomUpdates(roomId) {
         return;
     }
     if (roomUnsubscribe) {
-        // console.log("Unsubscribing from previous room listener."); // デバッグ用
         roomUnsubscribe();
     }
-    // console.log(`Listening to room ${roomId} for updates...`);
 
-    // ターン変更検知のため、現在のactivePlayerIdを保持 (onSnapshotの直前に更新)
     previousActivePlayerId = activePlayerId;
     currentRoomId = roomId;
 
@@ -1107,13 +1047,14 @@ function listenToRoomUpdates(roomId) {
         .onSnapshot((doc) => {
             if (doc.exists) {
                 const roomData = doc.data();
-                // console.log("Room data snapshot: ", roomData);
 
+                // グローバル変数の更新
                 players = Object.values(roomData.players || {}).sort((a,b) => a.joinOrder - b.joinOrder);
                 activePlayerId = roomData.activePlayerId;
                 claimedTracks = roomData.claimedColumns || {};
                 tempMarkersOnBoard = roomData.turnTemporaryMarkers || {};
 
+                // UI更新
                 updatePlayersList(roomData);
                 updateCurrentPlayerDisplay(roomData);
                 updateBoardMarkers(roomData);
@@ -1122,18 +1063,25 @@ function listenToRoomUpdates(roomId) {
 
                 const isMyTurn = roomData.activePlayerId === localPlayerId;
 
+                // ゲーム状態に応じたUI制御
                 if (roomData.status === 'playing') {
                     showGameRelatedUI(roomData.hostId === localPlayerId, roomData.status);
                     if (startGameButton) startGameButton.classList.add('hidden');
 
                     const diceRolled = roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0;
                     const combinationChosen = roomData.turnChosenSums && roomData.turnChosenSums.length > 0;
-                    const isBusted = roomData.turnBusted;
-                    const tempMarkersExist = Object.keys(roomData.turnTemporaryMarkers || {}).length > 0;
+                    const isGamePlaying = roomData.status === 'playing'; // playing状態か
+                    const diceRolled = roomData.turnDiceRoll && roomData.turnDiceRoll.length > 0; // ダイスロール済みか
+                    const combinationChosen = roomData.turnChosenSums && roomData.turnChosenSums.length > 0; // 組み合わせ選択済みか
+                    const isBustedForThisTurn = roomData.turnBusted; // ★現在のターンのプレイヤーがバストしているか
+                    const tempMarkersExist = Object.keys(roomData.turnTemporaryMarkers || {}).length > 0; // 一時マーカーが存在するか
 
+                    // 「ダイスを振る」/「続ける」ボタンの制御
                     if (rollDiceButton) {
-                        const canMakeFirstRoll = isMyTurn && roomData.status === 'playing' && !isBusted && !diceRolled;
-                        const canContinue = isMyTurn && roomData.status === 'playing' && !isBusted && diceRolled && combinationChosen && tempMarkersExist;
+                        // 条件1: 自分のターン、プレイ中、バスト状態ではなく、まだダイスを振っていない → 「ダイスを振る」を有効化
+                        const canMakeFirstRoll = isMyTurn && isGamePlaying && !isBustedForThisTurn && !diceRolled;
+                        // 条件2: 自分のターン、プレイ中、バスト状態ではなく、ダイスを振り、組み合わせも選び、一時マーカーもある → 「続ける」を有効化
+                        const canContinue = isMyTurn && isGamePlaying && !isBustedForThisTurn && diceRolled && combinationChosen && tempMarkersExist;
 
                         if (canMakeFirstRoll) {
                             rollDiceButton.disabled = false;
@@ -1142,26 +1090,53 @@ function listenToRoomUpdates(roomId) {
                             rollDiceButton.disabled = false;
                             rollDiceButton.textContent = '続ける';
                         } else {
+                            // 上記のいずれでもない場合は無効化
                             rollDiceButton.disabled = true;
-                            if (!isMyTurn) rollDiceButton.textContent = 'ダイスを振る';
+                            // ボタンのテキストを状況に応じて設定
+                            if (!isMyTurn || !isGamePlaying) { // 自分のターンでない、またはゲーム中でない
+                                 rollDiceButton.textContent = 'ダイスを振る';
+                            } else if (isMyTurn && isGamePlaying && isBustedForThisTurn) { // 自分のターンでバストしている
+                                rollDiceButton.textContent = 'バストしました';
+                            } else if (isMyTurn && isGamePlaying && diceRolled && !combinationChosen) { // 組み合わせ選択待ち
+                                 rollDiceButton.textContent = '組み合わせ選択中';
+                            } else { // その他の自分のターンだが操作できない状態
+                                 rollDiceButton.textContent = 'ダイスを振る'; // デフォルトに戻す
+                            }
                         }
                     }
 
+                    // 「ストップ」ボタンの制御
                     if (stopButton) {
-                        stopButton.disabled = !(isMyTurn && roomData.status === 'playing' && !isBusted && diceRolled && tempMarkersExist);
+                        // ストップ可能な条件: 自分のターン、プレイ中、バストしてない、ダイスロール済み、組み合わせ選択済み、一時マーカーが存在
+                        const canStop = isMyTurn && isGamePlaying && !isBustedForThisTurn && diceRolled && combinationChosen && tempMarkersExist;
+                        stopButton.disabled = !canStop;
                     }
 
+                    // ダイス組み合わせ選択エリアの表示制御
                     if (diceCombinationChoiceArea) {
-                        const showCombinations = isMyTurn && roomData.status === 'playing' && diceRolled && !isBusted && !combinationChosen;
+                        // 表示条件: 自分のターン、プレイ中、ダイスロール済み、バストしてない、かつ組み合わせ未選択
+                        const showCombinations = isMyTurn && isGamePlaying && diceRolled && !isBustedForThisTurn && !combinationChosen;
+
                         if (showCombinations) {
                             diceCombinationChoiceArea.innerHTML = '';
                             generateDiceCombinations(roomData.turnDiceRoll);
                             diceCombinationChoiceArea.classList.remove('hidden');
                         } else {
                             diceCombinationChoiceArea.classList.add('hidden');
-                            if (isMyTurn && roomData.status === 'playing' && diceRolled && !isBusted && combinationChosen) {
-                                diceCombinationChoiceArea.querySelectorAll('input, button').forEach(el => el.disabled = true);
-                                diceCombinationChoiceArea.classList.remove('hidden');
+                            // 自分のターンで組み合わせ選択済みの場合、選択肢は表示し操作不可にする
+                            if (isMyTurn && isGamePlaying && diceRolled && !isBustedForThisTurn && combinationChosen) {
+                                // generateDiceCombinationsを再度呼ばないように、既存の要素を無効化する
+                                // diceCombinationChoiceArea.innerHTML が空でなければ（つまり要素が描画されていれば）無効化
+                                if(diceCombinationChoiceArea.innerHTML !== '' && diceCombinationChoiceArea.querySelector('input')){
+                                   diceCombinationChoiceArea.querySelectorAll('input, button').forEach(el => el.disabled = true);
+                                   diceCombinationChoiceArea.classList.remove('hidden');
+                                } else if (showCombinations) {
+                                    // このケースは上の if (showCombinations) で処理されるため、ここには来ないはず
+                                    // もしinnerHTMLが空だがcombinationChosenがtrueという稀なケースなら再描画＆無効化が必要
+                                    generateDiceCombinations(roomData.turnDiceRoll);
+                                    diceCombinationChoiceArea.querySelectorAll('input, button').forEach(el => el.disabled = true);
+                                    diceCombinationChoiceArea.classList.remove('hidden');
+                                }
                             }
                         }
                     }
@@ -1230,15 +1205,42 @@ function updateMessageDisplay(roomData) {
         return;
     }
 
-    if (roomData.turnBusted) {
-        const bustedPlayer = roomData.players[previousActivePlayerId];
-         if (bustedPlayer && previousActivePlayerId === localPlayerId) {
-            setDisplayMessage("バスト！あなたのターンは終了しました。", "error");
-         } else if (bustedPlayer) {
-            setDisplayMessage(`${bustedPlayer.name}さんがバストしました。`, "error");
-         } else {
+    // バストメッセージ表示の改善: バストしたプレイヤーIDをFirestoreに短時間記録するか、
+    // previousActivePlayerId をより確実に使う必要がある。
+    // 現状の previousActivePlayerId は listenToRoomUpdates の冒頭で更新されるため、
+    // バスト処理で activePlayerId が変更された「後」の onSnapshot では、
+    // previousActivePlayerId は「バストしたプレイヤー」ではなく「バストしたプレイヤーの前のプレイヤー」を指す可能性がある。
+    // → バストメッセージは、バストが Firestore に書き込まれた際の turnBusted: true をトリガーに表示するのが良い。
+    //   その際、メッセージを出すべき対象プレイヤーは、Firestore のデータだけでは特定しにくい場合がある。
+    //   クライアント側で「自分が直前のFirestore更新でバスト状態になった」ことを検知する方がシンプルかもしれない。
+    //   ここでは、roomData.turnBusted が true で、かつ activePlayerId が自分ではない（＝ターンが移った後）場合、
+    //   previousActivePlayerId がバストしたプレイヤーだと期待してメッセージを出す。
+
+    if (roomData.turnBusted) { // 誰かがバストしたという事実に基づいてメッセージを出す
+        // activePlayerIdは既に次のプレイヤーに移っているはずなので、previousActivePlayerIdがバストしたプレイヤー
+        const bustedPlayerObject = roomData.players[previousActivePlayerId];
+
+        if (bustedPlayerObject && previousActivePlayerId === localPlayerId && !isMyTurn) {
+            // 自分がバストして、既にターンが移っている場合。(この条件はisMyTurnがfalseなので通常はここに来ない)
+            // selectDiceCombinationでバスト時に自分のメッセージは既に出しているはず。
+            // ここでは他のプレイヤー向けのメッセージを主に考慮。
+             setDisplayMessage("あなたがバストしました。次のプレイヤーの番です。", "error"); // 自分への最終通知
+        } else if (bustedPlayerObject && previousActivePlayerId !== localPlayerId ) {
+            // 他の誰かがバストした。
+            setDisplayMessage(`${bustedPlayerObject.name}さんがバストしました。`, "error");
+        } else if (isMyTurn && roomData.turnTemporaryMarkers && Object.keys(roomData.turnTemporaryMarkers).length === 0) {
+            // isBust で activePlayerId が変更され、新しいターンプレイヤーになった場合、
+            // この分岐は通常通らないはず（turnBusted:false で新しいターンが始まるため）。
+            // もし自分のターンで turnBusted が true のままなら（例えば selectDiceCombination の書き込みが部分的だったなど）、
+            // このメッセージが表示される。
+            setDisplayMessage("バストしました！", "error");
+        } else if (!bustedPlayerObject && previousActivePlayerId) {
+             // previousActivePlayerId はあるが、そのプレイヤー情報が roomData.players にない場合（ほぼありえない）
+             setDisplayMessage(`プレイヤー ${previousActivePlayerId.substring(0,4)}.. さんがバストしました。`, "error");
+        } else {
+            // バストしたが、詳細不明な場合
             setDisplayMessage("バストが発生しました。", "error");
-         }
+        }
         return;
     }
 
