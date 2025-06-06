@@ -1,170 +1,582 @@
+/* -------------------------
+   General Styles
+------------------------- */
 body {
-    font-family: sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start; /* 上寄せに変更 */
-    min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 0;
-    background-color: #f0f0f0;
-    padding-top: 20px; /* コンテンツ上部に余白を追加 */
+    padding: 0;
+    background-color: #eef1f5; /* Light grayish blue */
+    color: #333;
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
 }
 
-#game-container {
-    background-color: white;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 90%;
-    max-width: 800px; /* 最大幅を設定 */
+.container { /* Main container for content centering and max-width */
+    width: 95%;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 15px;
 }
 
 header {
+    background: #3a506b; /* Darker blue-gray */
+    color: #fff;
+    padding: 1rem 0;
     text-align: center;
     margin-bottom: 20px;
+    width: 100%;
 }
 
-#room-management, #game-area {
+header h1 {
+    margin: 0;
+    font-size: 2em;
+}
+
+/* -------------------------
+   Section Common Styles
+------------------------- */
+#room-management,
+#game-info,
+#player-list-area,
+#game-play-area { /* Combined game board, dice, and action areas */
+    background: #fff;
+    padding: 20px;
     margin-bottom: 20px;
-    padding: 15px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    border: 1px solid #ced4da;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.07);
 }
 
-#room-management h2, #game-area h3, #game-area h4 {
+/* Section titles */
+#room-management h2, #room-management h3,
+#game-info h2, /* Game Info title (if any, currently only p tags) */
+#player-list-area h3,
+#game-play-area h3 { /* Generic title for sub-sections like dice, actions */
     margin-top: 0;
+    color: #3a506b;
+    border-bottom: 2px solid #6c757d;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+/* Specific titles for dice and action areas if they are direct children of game-play-area */
+#dice-area h3,
+#action-area h3 {
+    margin-top: 0;
+    color: #3a506b;
+    border-bottom: 2px solid #6c757d;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
 }
 
-#room-management div {
-    margin-bottom: 10px;
-}
 
-#room-management label {
-    display: inline-block;
-    width: 100px;
-}
-
+/* -------------------------
+   Room Management Section
+------------------------- */
 #room-management input[type="text"] {
-    padding: 5px;
-    border: 1px solid #ccc;
-    border-radius: 3px;
+    padding: 10px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    margin-right: 10px;
+    margin-bottom: 10px;
+    width: calc(60% - 22px);
+    box-sizing: border-box;
+}
+#room-management button { /* Specific buttons in room management */
+    padding: 10px 18px;
+}
+#room-id-display {
+    font-weight: bold;
+    color: #17a2b8; /* Info blue */
+    background-color: #e9ecef;
+    padding: 5px 10px;
+    border-radius: 4px;
+    display: inline-block;
 }
 
-#room-management button, #dice-area button, #controls button {
-    padding: 8px 15px;
+/* -------------------------
+   Game Info Section
+------------------------- */
+#game-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+}
+#current-player-display {
+    font-size: 1.3em;
+    font-weight: bold;
+    color: #2a9d8f; /* Teal like color */
+}
+#message-display { /* For game messages, errors, successes */
+    font-size: 1em;
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+    background-color: #f8f9fa; /* Default background */
+    border: 1px solid #e9ecef; /* Default border */
+    width: 100%;
+    text-align: center;
+    min-height: 1.6em;
+    transition: background-color 0.3s ease, color 0.3s ease; /* Smooth transition for class changes */
+}
+#message-display.error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb;}
+#message-display.success { background-color: #d4edda; color: #155724; border-color: #c3e6cb;}
+#message-display.info { background-color: #d1ecf1; color: #0c5460; border-color: #bee5eb;}
+
+
+/* -------------------------
+   Game Board Styles
+------------------------- */
+#game-board { /* Direct child of #game-play-area now */
+    display: flex;
+    justify-content: space-around;
+    align-items: flex-end;
+    min-height: 380px;
+    padding: 15px;
+    background-color: #e9ecef;
+    overflow-x: auto;
+    border-radius: 6px;
+    margin-bottom: 20px; /* Space before dice/action areas */
+}
+
+.track { /* Individual column for a number */
+    display: flex;
+    flex-direction: column-reverse; /* Cells stack from bottom up */
+    align-items: center;
+    margin: 0 4px;
+    padding: 8px 4px;
+    background-color: #f8f9fa;
+    border: 1px solid #adb5bd;
+    border-radius: 4px;
+    min-width: 45px;
+    transition: background-color 0.2s ease;
+}
+.track.highlight { /* For JS to highlight selectable tracks (Not currently implemented in JS) */
+    background-color: #d1e7dd;
+    box-shadow: 0 0 10px #28a745;
+}
+
+.track-label { /* Number of the track (2 to 12) */
+    font-weight: bold;
+    font-size: 1.4em;
+    margin-bottom: 10px;
+    color: #495057;
+}
+
+.cell { /* Individual cell in a track */
+    width: 40px;
+    height: 28px;
+    border: 1px solid #adb5bd;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 0.75em;
+    background-color: #fff;
+    position: relative; /* For marker positioning */
+    border-radius: 2px;
+    cursor: default;
+}
+.cell.highlight-selectable { /* For JS to highlight cells player can move to (Not currently implemented in JS) */
+    outline: 2px solid #007bff;
+    outline-offset: -2px;
+}
+
+.cell.cant-stop-space { /* Starting space for each track */
+    background-color: #fff3cd; /* Light yellow */
+    font-style: italic;
+    font-weight: bold;
+    border-style: dashed;
+    border-color: #ffeeba;
+}
+
+.cell.goal-line { /* Final space (goal) of a track */
+    background-color: #f9c74f; /* Saffron yellow for goal */
+    border: 2px solid #f3722c; /* Orange border for goal */
+    font-weight: bold;
+}
+
+/* -------------------------
+   Marker Styles
+------------------------- */
+.marker-container { /* Container within each cell for precise marker placement */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+.temp-marker, .claim-marker { /* Common styles for temporary and claim markers */
+    width: 20px;
+    height: 20px;
+    border-radius: 50%; /* Circular markers */
+    position: absolute;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 0.7em;
+    color: white;
+    font-weight: bold;
+    transition: transform 0.1s ease-out;
+}
+.temp-marker:hover {
+    transform: scale(1.1);
+}
+
+.temp-marker { /* Current turn's temporary markers */
+    opacity: 0.8;
+    border: 2px solid rgba(255,255,255,0.7);
+    z-index: 10; /* Ensure temp markers are above progress/claim markers if in same offset slot */
+}
+/* Player-specific colors for temporary markers */
+.temp-marker.player0 { background-color: #d90429; } /* Strong Red */
+.temp-marker.player1 { background-color: #0077b6; } /* Strong Blue */
+.temp-marker.player2 { background-color: #2d6a4f; } /* Strong Green */
+.temp-marker.player3 { background-color: #fca311; color: #212529; border-color: rgba(0,0,0,0.3);} /* Strong Yellow */
+
+.claim-marker { /* Markers indicating a claimed track (on goal line) */
+    width: 22px;
+    height: 22px;
+    border: 3px solid #fff;
+    opacity: 1;
+    font-size: 0.8em;
+    z-index: 8;
+}
+/* Player-specific colors for claim markers */
+.claim-marker.player0 { background-color: #b2001a; box-shadow: 0 0 8px #ef233c; }
+.claim-marker.player1 { background-color: #023e8a; box-shadow: 0 0 8px #00b4d8; }
+.claim-marker.player2 { background-color: #1b4332; box-shadow: 0 0 8px #40916c; }
+.claim-marker.player3 { background-color: #e85d04; color: #fff; box-shadow: 0 0 8px #ffba08; }
+
+/* Progress markers (player's saved non-claimed positions) */
+.progress-marker {
+    width: 16px;
+    height: 16px;
+    border-radius: 30%; /* Slightly squared circle to differentiate */
+    position: absolute;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 0.6em;
+    color: white;
+    font-weight: bold;
+    opacity: 0.6;
+    border: 1px solid rgba(0,0,0,0.2);
+    z-index: 6; /* Below temp and claim markers */
+}
+
+/* Player-specific colors for progress markers */
+.progress-marker.player0 { background-color: rgba(217, 4, 41, 0.6); }
+.progress-marker.player1 { background-color: rgba(0, 119, 182, 0.6); }
+.progress-marker.player2 { background-color: rgba(45, 106, 79, 0.6); }
+.progress-marker.player3 { background-color: rgba(252, 163, 17, 0.6); color: #212529; }
+
+/* Offset styles for overlapping markers in the same cell */
+/* Applied by JS to .temp-marker, .progress-marker, or .claim-marker */
+.marker-offset-0 { /* Default centered position (no offset needed if only one) */
+    /* transform: translate(-50%, -50%); */ /* Base style for markers might already do this if they are absolute */
+}
+.marker-offset-1 {
+    transform: translate(-70%, -70%); /* Example: Top-left of center */
+}
+.marker-offset-2 {
+    transform: translate(-30%, -30%); /* Example: Bottom-right of center */
+}
+.marker-offset-3 {
+    transform: translate(-70%, -30%); /* Example: Bottom-left of center */
+}
+/* Consider adding more offsets if more than 4 markers are expected in a cell, though unlikely. */
+
+
+/* -------------------------
+   Dice Area Styles
+------------------------- */
+#dice-area {
+    text-align: center;
+    margin-top: 20px;
+}
+#dice-result-display {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    margin-bottom: 15px;
+}
+.dice-value {
+    width: 35px;
+    height: 35px;
+    line-height: 33px;
+    border: 1px solid #6c757d;
+    background-color: #fff;
+    border-radius: 4px;
+    font-size: 1.2em;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 1px 1px 3px rgba(0,0,0,0.2);
+}
+
+/* -------------------------
+   Action Area Styles
+------------------------- */
+#action-area {
+    margin-top: 20px;
+    text-align: center;
+}
+#dice-combination-choice-area {
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+    margin-bottom: 15px;
+}
+#dice-combination-choice-area label {
+    display: block;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+#dice-combination-choice-area label:hover {
+    background-color: #e9ecef;
+    border-color: #adb5bd;
+}
+#dice-combination-choice-area input[type="radio"] {
+    margin-right: 8px;
+    vertical-align: middle;
+}
+#dice-combination-choice-area label.selected { /* JS adds this class */
+    background-color: #cfe2ff;
+    border-color: #9ec5fe;
+    font-weight: bold;
+}
+
+/* Styles for 3rd marker choice UI */
+#place-third-marker-choice-area {
+    padding: 15px;
+    background-color: #fff8e1; /* Light yellow background to highlight choice */
+    border: 1px solid #ffecb3;
+    border-radius: 6px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+#place-third-marker-choice-area h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #795548; /* Brownish text */
+}
+.third-marker-choice-btn { /* Class for dynamically created buttons */
+    background-color: #4CAF50; /* Green */
+    color: white;
+    padding: 10px 15px;
+    margin: 5px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+.third-marker-choice-btn:hover {
+    background-color: #388E3C;
+}
+
+
+/* -------------------------
+   Player List Styles
+------------------------- */
+#player-list-area {
+    /* max-height: 200px; */
+    /* overflow-y: auto; */
+}
+#player-list {
+    list-style: none;
+    padding: 0;
+}
+#player-list li {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f1f3f5;
+    display: flex;
+    align-items: center;
+}
+#player-list li:last-child {
+    border-bottom: none;
+}
+#player-list li .player-color-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 10px;
+    border: 1px solid rgba(0,0,0,0.2);
+}
+#player-list li.active-player {
+    font-weight: bold;
+    background-color: #e7f5ff;
+}
+#player-list li.my-name span:not(.player-color-indicator) {
+    border-bottom: 2px solid #2a9d8f;
+}
+
+
+/* -------------------------
+   Button Common Styles
+------------------------- */
+button {
+    padding: 10px 15px;
+    min-width: 100px;
+    min-height: 40px;
+    text-align: center;
     background-color: #007bff;
     color: white;
     border: none;
-    border-radius: 3px;
+    border-radius: 5px;
     cursor: pointer;
+    font-size: 1em;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     margin-left: 5px;
+    margin-right: 5px;
 }
-
-#room-management button:disabled,
-#dice-area button:disabled,
-#controls button:disabled {
-    background-color: #ccc;
+button:hover:not(:disabled) {
+    background-color: #0056b3;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+}
+button:disabled {
+    background-color: #ced4da;
+    color: #6c757d;
     cursor: not-allowed;
+    box-shadow: none;
+    opacity: 0.65;
 }
 
-#game-board {
-    display: flex;
-    justify-content: space-around;
-    align-items: flex-end; /* マスを下から積み上げるように */
-    height: 350px; /* ゲームボードの高さ */
-    border: 1px solid #ccc;
-    padding: 10px;
-    margin-bottom: 20px;
-    overflow-x: auto; /* 横スクロールを許可 */
+/* Specific Button Styles */
+#create-room-btn, #join-room-btn {
+    min-width: 120px;
 }
 
-.track {
-    display: flex;
-    flex-direction: column-reverse; /* マスを下から上に配置 */
-    align-items: center;
-    margin: 0 5px; /* トラック間の余백 */
-    position: relative; /* Can't Stop スペースの位置調整用 */
+#start-game-btn {
+    background-color: #28a745;
+    min-width: 150px;
+}
+#start-game-btn:hover:not(:disabled) { background-color: #218838; }
+
+#stop-btn {
+    background-color: #dc3545;
+    min-width: 120px;
+}
+#stop-btn:hover:not(:disabled) { background-color: #c82333; }
+
+#roll-dice-btn {
+    background-color: #ffc107;
+    color: #212529;
+    min-width: 150px;
+}
+#roll-dice-btn:hover:not(:disabled) { background-color: #e0a800; }
+
+
+/* -------------------------
+   Utility Styles
+------------------------- */
+.hidden {
+    display: none !important;
 }
 
-.track-label {
-    font-weight: bold;
-    margin-bottom: 5px; /* マスとの間隔 */
+/* -------------------------
+   Responsive Styles
+------------------------- */
+@media (max-width: 768px) {
+    .container {
+        width: 100%;
+        padding: 10px;
+    }
+    header h1 {
+        font-size: 1.5em;
+    }
+    #room-management input[type="text"] {
+        width: calc(100% - 20px);
+        margin-right: 0;
+    }
+    #room-management button {
+        width: calc(100% - 20px);
+        margin-left: 0;
+        margin-right: 0;
+        margin-top: 5px;
+    }
+    #game-info {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    #current-player-display {
+        margin-bottom:10px;
+        text-align:center;
+    }
+
+    .track {
+        min-width: 35px;
+    }
+    .cell {
+        width: 30px;
+        height: 22px;
+    }
+    .temp-marker, .claim-marker, .progress-marker {
+        width: 15px;
+        height: 15px;
+        font-size: 0.6em;
+    }
+    .claim-marker {
+        width: 17px;
+        height: 17px;
+    }
+     .progress-marker {
+        width: 13px;
+        height: 13px;
+    }
 }
 
-.cell {
-    width: 30px;
-    height: 20px; /* マスの高さを調整 */
-    border: 1px solid #aaa;
-    margin-bottom: 2px; /* マス間の余白 */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 10px;
-    background-color: #fff;
-    position: relative; /* マーカー表示のため */
-}
-
-.cant-stop-space {
-    width: 30px;
-    height: 20px;
-    border: 1px dashed #aaa;
-    margin-bottom: 2px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 10px;
-    color: #777;
-    background-color: #f9f9f9;
-}
-
-.goal-line {
-    border-top: 2px solid gold !important; /* ゴールラインを強調 */
-}
-
-#dice-results {
-    display: flex;
-    gap: 10px; /* ダイス間の余白 */
-    margin-bottom: 10px;
-    min-height: 40px; /* 表示エリアの最低限の高さを確保 */
-}
-
-.dice {
-    width: 30px;
-    height: 30px;
-    border: 1px solid #000;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-weight: bold;
-}
-
-#dice-combinations label {
-    display: block; /* 各組み合わせを改行して表示 */
-    margin-bottom: 5px;
-}
-
-/* プレイヤーマーカーのスタイル（仮） */
-.marker {
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    position: absolute; /* セルの中央に配置するため */
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    opacity: 0.7;
-}
-.temp-marker { /*一時マーカーは少し小さく、透過させる */
-    width: 12px;
-    height: 12px;
-    opacity: 0.6;
-    border: 1px solid black;
-}
-
-.player-1 { background-color: red; }
-.player-2 { background-color: blue; }
-.player-3 { background-color: green; }
-.player-4 { background-color: yellow; }
-
-#player-info div {
-    margin-bottom: 5px;
+@media (max-width: 480px) {
+    button, #room-management button, .third-marker-choice-btn {
+        padding: 8px 12px;
+        font-size: 0.9em;
+        width: 100%;
+        box-sizing: border-box;
+        margin-left: 0;
+        margin-right: 0;
+    }
+     #room-management input[type="text"] {
+        width: 100%;
+        box-sizing: border-box;
+        margin-right: 0;
+    }
+    .track-label {
+        font-size: 1em;
+    }
+    .cell {
+        width: 25px;
+        height: 20px;
+    }
+    .temp-marker, .claim-marker, .progress-marker {
+        width: 12px;
+        height: 12px;
+    }
+    .claim-marker {
+        width: 14px;
+        height: 14px;
+    }
+    .progress-marker {
+        width: 10px;
+        height: 10px;
+    }
+     #dice-result-display .dice-value {
+        width: 30px;
+        height: 30px;
+        line-height: 28px;
+        font-size: 1em;
+    }
 }
